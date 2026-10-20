@@ -1,6 +1,7 @@
 # Shared course forum — Engineering handoff
 
-Status: Implemented — ready for independent verification
+Status: Implemented and independently verified for Stage 5A; shared-platform
+foundation verification is recorded below.
 Approval: Implementation follows the product-owner-approved spec and design, 2026-10-20
 Last handoff: Engineer → Tester / @ziyang, 2026-10-20 — shared server contract and authorization suite are ready for verification and student UI consumption.
 
@@ -164,3 +165,57 @@ No compiler warnings were emitted after the final fix.
 - Next owner: independent tester verifies the approved feature and writes
   `workflow/features/shared-course-forum/test-report.md`; @ziyang may consume
   `docs/shared-course-forum-api.md` for the student-facing UI.
+
+## Stage 5A forum UI implementation (2026-10-21)
+
+Status: implemented; ready for independent UI verification.
+
+- Replaced the React scaffold's staff-only placeholder with a shared student
+  and staff account entry flow, authenticated course dashboard, course
+  selection, and explicit empty/loading/request-failure states.
+- Added course-scoped forum browsing, thread reads, post/reply creation,
+  author-only edits, author deletes, and staff controls for deleting
+  student-authored posts/replies. The browser only presents relevant controls;
+  every operation continues to rely on the existing server authorization.
+- Added staff course creation, rename/delete confirmation, member add/list,
+  student removal confirmation, and clear notice/error feedback. Students are
+  not offered enrolment or withdrawal controls.
+- Kept Stage 4A resource download and staff PDF-management paths available;
+  no LLM, retrieval, generated-answer, or material-consolidation UI was added.
+
+### Verification
+
+```text
+sh scripts/test.sh
+Platform integration tests: PASS
+
+git diff --check
+PASS
+```
+
+`npm run typecheck` and `npm run build` could not be executed in this host
+because `npm` is not installed (`zsh: command not found: npm`). A tester should
+run both commands from `frontend/`, then exercise the student and staff flows
+against `sh scripts/run-local.sh` in an environment that permits the HTTP
+listener.
+
+## Stage 5A QA repair (2026-10-21)
+
+- Recorded the user-approved Stage 5A amendment in `design.md`: the public
+  role choice now leads to separate functional student and staff sign-in/sign-up
+  flows, while staff sign-up continues to disclose that it is unverified.
+- On forum, thread, and member-list load failure, clear the corresponding
+  cached protected data before rendering an unavailable state. Each unavailable
+  state offers Retry; failed reply mutation also refreshes its thread state.
+- The final QA repair also reloads the thread after a failed stale-comment
+  deletion and reloads members after a failed stale-student removal. If either
+  reload is denied or fails, its existing safe failure handler clears protected
+  state and presents Retry.
+- Validation evidence after repair:
+
+```text
+PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm run typecheck
+PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm run build
+sh scripts/test.sh
+git diff --check
+```

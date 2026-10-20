@@ -4,6 +4,13 @@ Status: Approved
 Approval: Human product-owner approval recorded in chat, 2026-10-20. The authentication entry-flow amendment (role choice; student placeholder; staff sign-up/sign-in) was directly approved by the human product owner, 2026-10-20.
 Last handoff: Human product owner → Engineer, 2026-10-20 — approved for shared platform/server implementation, including the authentication entry-flow amendment.
 
+Stage 5A amendment: The human request to implement Stage 5A fully (2026-10-21)
+authorizes functional student authentication in addition to the originally
+documented placeholder. The public entry remains a Student/Staff role choice;
+each role has its own sign-in and sign-up path. Staff self-sign-up retains the
+explicit unverified-account disclosure. This amendment does not change server
+authorization, course membership, or LLM scope.
+
 ## Scope and visual language
 
 This design implements the approved shared-course-forum specification only: account creation, course/membership management, course-scoped forum activity, and the Resources entry point. Resource upload, processing, and management are owned by staff-material-governance.
