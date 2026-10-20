@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit Changes"
+  short_description: "Create focused, reviewable Git commits"
+  default_prompt: "Use $commit-changes to prepare a focused commit for the selected changes."

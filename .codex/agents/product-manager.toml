@@ -1,0 +1,2 @@
+# Role configuration loaded when the orchestrator spawns `product-manager`.
+model_instructions_file = "product-manager.md"

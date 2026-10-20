@@ -1,0 +1,2 @@
+# Role configuration loaded when the orchestrator spawns `ui-designer`.
+model_instructions_file = "ui-designer.md"

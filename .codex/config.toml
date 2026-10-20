@@ -1,0 +1,23 @@
+#:schema https://developers.openai.com/codex/config-schema.json
+
+# This project-local configuration is shared through Git. It contains no
+# credentials, machine-specific paths, or provider configuration.
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 2
+
+[agents.product-manager]
+description = "Turn a feature idea into a scoped, testable product specification; do not implement code."
+config_file = "agents/product-manager.toml"
+
+[agents.ui-designer]
+description = "Produce or review a feature UI/UX design using the approved specification and project design guidance."
+config_file = "agents/ui-designer.toml"
+
+[agents.engineer]
+description = "Implement an approved feature incrementally with tests while preserving its requirements and design."
+config_file = "agents/engineer.toml"
+
+[agents.tester]
+description = "Independently verify a feature against its approved requirements and report reproducible results without fixing code."
+config_file = "agents/tester.toml"
