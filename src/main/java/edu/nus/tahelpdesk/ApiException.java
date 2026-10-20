@@ -11,4 +11,5 @@ public final class ApiException extends RuntimeException {
   public static ApiException forbidden() { return new ApiException(403, "permission_denied", "This action is unavailable."); }
   public static ApiException hidden() { return new ApiException(404, "not_found", "The requested resource is unavailable."); }
   public static ApiException conflict(String message) { return new ApiException(409, "conflict", message); }
+  public static ApiException rateLimited(String message) { return new ApiException(429, "retry_limited", message); }
 }

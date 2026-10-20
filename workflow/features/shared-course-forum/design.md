@@ -1,8 +1,8 @@
 # Shared Identity, Course Membership, and Course-Scoped Forum — UI Design
 
 Status: Approved
-Approval: Human product-owner approval recorded in chat, 2026-10-20
-Last handoff: Human product owner → Engineer, 2026-10-20 — approved for shared platform/server implementation.
+Approval: Human product-owner approval recorded in chat, 2026-10-20. The authentication entry-flow amendment (role choice; student placeholder; staff sign-up/sign-in) was directly approved by the human product owner, 2026-10-20.
+Last handoff: Human product owner → Engineer, 2026-10-20 — approved for shared platform/server implementation, including the authentication entry-flow amendment.
 
 ## Scope and visual language
 
@@ -27,6 +27,7 @@ Use a calm blue-and-white educational interface: white/light-neutral surfaces, d
 | `MemberList` | Separate labelled Course staff/Students lists, username and role badge. Only student rows offer removal. |
 | `ForumPostCard` / `CommentCard` | Username/role badge, timestamp, sanitized text, and only permitted actions. No credentials/private profile data. |
 | `ResourceEntryCard` | Course-scoped Resources label/link only; no material-management controls. |
+| `RoleChoiceCard` | A whole-card, semantic button for choosing `Student` or `Staff` before authentication. It includes a short path description and visible keyboard focus; it is not a radio group because choosing it navigates to the corresponding route. |
 
 These are reusable patterns for later designs. Human discussions are labelled **Discussion** and must not be styled as AI output.
 
@@ -36,7 +37,7 @@ The authenticated landing page is `My courses`, listing only courses returned fo
 
 | Context | Navigation and visible actions |
 | --- | --- |
-| Visitor | Sign-up only. Protected route shows generic sign-in-required feedback; sign-in itself is not specified here. |
+| Visitor | Home page provides Student and Staff paths. The Student path is an explicit placeholder. The Staff path provides separate `Log in` and `Sign up` actions. Protected route shows generic sign-in-required feedback and a `Go to sign in` action without exposing protected course information. |
 | Student, course list | Course cards only; no create-course/membership/settings controls. |
 | Enrolled student | `Forum`, `Resources`; create/edit/delete own content only. No join/withdraw/member/settings controls. |
 | Course staff | `Forum`, `Resources`, `Members`, `Settings`; creation, member addition/student removal, course rename/delete, own content actions, and student-content delete. |
@@ -44,11 +45,24 @@ The authenticated landing page is `My courses`, listing only courses returned fo
 
 ## Flows and layouts
 
-### Account sign-up and role selection
+### Public home and authentication entry
 
-Use a 440 px single-column card on a light-neutral page: product name, `Create your account`, username, password, role radio-cards, and `Create account`. Neither role is preselected. The Staff card says: `For this test project, staff accounts are self-selected and are not institutionally verified.`
+The unauthenticated root page is the first decision point, not a sign-in form. Use a light-neutral page with the product name and one H1: `How would you like to continue?` Below it, place two equal-width `RoleChoiceCard`s in a two-column layout (one column below 768 px):
 
-Required-field, duplicate-username, invalid-password, and general failures appear in a focused summary and associated fields without echoing the password. States: initial, client validation, server validation, submitting, success (confirm role then route to `My courses`), and recoverable request failure.
+| Choice | Card content | Result |
+| --- | --- | --- |
+| `Student` | `Access student course help` and `Student features are being prepared.` | Navigate to the Student placeholder. This path must make no authentication or course request and must not resemble a failed sign-in. |
+| `Staff` | `Manage courses and materials` and `Create an account or sign in to continue.` | Navigate to the Staff authentication page. |
+
+The Student placeholder keeps the public shell and gives an intentional, plain-language state: H1 `Student access is coming soon`, short explanation that the student experience is not available in this release, and `Back to role selection`. It has no form, disabled credential controls, fabricated course data, sign-up action, or claim that an account was created. It is keyboard reachable and the return action restores focus to the Student choice on the home page.
+
+The Staff authentication page uses a 440 px single-column card on the same background. Its H1 is `Staff access`; supporting text says `Sign in to an existing staff account, or create one for this test project.` Show two peer actions: primary `Log in` and secondary `Sign up`. Selecting an action replaces the action chooser with that action's form in place, retaining a visible `Back to staff options` action. Browser back returns to the prior public view. Do not submit an empty authentication form merely because a visitor entered account details intended for registration.
+
+### Staff sign-up and log-in
+
+`Sign up` presents product name, H1 `Create staff account`, username, password, the test-project disclosure, and `Create account`. This entry flow already selected Staff, so it does not present a role picker or silently create a Student account. The disclosure reads: `For this test project, staff accounts are self-selected and are not institutionally verified.` This preserves the approved self-selected-role policy without implying institutional authorization.
+
+`Log in` presents product name, H1 `Log in to staff access`, username, password, and `Log in`. It does not imply that arbitrary new details will create an account. Required-field, duplicate-username (sign-up only), invalid-password, invalid credentials (log-in only), and general failures appear in a focused summary and associated fields without echoing the password or revealing whether an account exists beyond the approved error contract. States: initial, client validation, server validation, submitting, success (route to `My courses`), and recoverable request failure. Each pending action disables only its own submit control, announces progress, and preserves non-sensitive username values on failure.
 
 ### My courses and course creation
 
@@ -95,6 +109,7 @@ Course staff only. `Course details` displays code as read-only context and edits
 
 - Under 768 px, replace rail with scrollable `CourseNav`, stack controls, and use full-screen mobile dialogs only with focus trap and explicit close.
 - Use landmarks, one H1/view, native labelled controls, logical keyboard order, visible focus, no hover-only action, Escape and focus restore for overlays.
+- `RoleChoiceCard` is operable with Tab and Enter/Space, has an accessible name including its role and purpose, and does not use colour or position alone to distinguish the paths. Sign-up and log-in inputs use explicit labels, appropriate `autocomplete` values, and password fields never retain or announce their value after validation/request failure.
 - Meet WCAG AA contrast; support 200% zoom without clipped actions/page scroll.
 - Live-announce successful mutations; focus error summary after failed submit.
 - Every async view has loading, empty, success, validation-error, unavailable/permission-denied, and network/service-failure treatments. Retry repeats only a failed operation, never a successful deletion.
@@ -107,15 +122,14 @@ Course staff only. `Course details` displays code as read-only context and edits
 
 ## Open questions
 
-1. Sign-up is specified but the sign-in/session-entry screen is not. Engineering should implement the minimum protected-route entry without extending policy.
-2. No maximum comment length is approved. This design introduces none; any later limit must be approved and consistent between editor and service.
+1. No maximum comment length is approved. This design introduces none; any later limit must be approved and consistent between editor and service.
 
 ## Handoff
 
-**Feature:** `shared-course-forum` — Draft / Pending human design approval.
+**Feature:** `shared-course-forum` — Approved.
 
 **Inputs:** `AGENTS.md`, project/development documents, product-foundation and shared-course-forum specifications, and `ui-consistency` skill.
 
-**Deliverable:** This design only. It establishes the blue-and-white shared shell and reusable patterns without changing requirements or code.
+**Deliverable:** This design only. It establishes the blue-and-white shared shell and reusable patterns, including the approved public role choice, intentional Student placeholder, and Staff sign-up/log-in entry flow, without changing requirements or code.
 
-**Next owner:** Human product owner approves design; then @p-xp implements the shared foundation/contracts and @ziyang consumes them for student-facing work.
+**Next owner:** Engineer implements the approved public authentication entry flow alongside the shared foundation/contracts. The Student card remains a non-authenticated placeholder until its dedicated student experience is approved.

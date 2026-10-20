@@ -13,4 +13,9 @@ public final class Domain {
                      Instant createdAt, Instant updatedAt) {}
   public record Comment(UUID id, UUID postId, UUID authorId, String body,
                         Instant createdAt, Instant updatedAt) {}
+  /** Source PDFs are deliberately distinct from future generated AI artefacts. */
+  public enum MaterialStatus { processing, active, failed, deleted }
+  public record Material(UUID id, UUID courseId, UUID uploaderId, String filename,
+                         MaterialStatus status, String failureMessage, byte[] content,
+                         int pageCount, Instant createdAt, Instant updatedAt) {}
 }

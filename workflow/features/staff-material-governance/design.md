@@ -1,8 +1,8 @@
 # Staff Material Governance — UI Design
 
-Status: Draft
-Approval: Pending human design approval; AI controls remain implementation-blocked pending the SoC operating envelope
-Last handoff: UI designer → Human product owner / engineer, 2026-10-20 — layouts and states for course resources, staff material management, and generated-artefact review.
+Status: Approved for Stage 4A non-AI implementation
+Approval: Human product-owner approval recorded in chat, 2026-10-20 — approved Resources and non-AI Manage materials flow. AI controls remain implementation-blocked pending the SoC operating envelope.
+Last handoff: Human product owner → Engineer, 2026-10-20 — implement approved non-AI Resources, upload, lifecycle, retry, and authorization states; leave generated-artefact controls unavailable.
 
 ## Scope and access boundary
 

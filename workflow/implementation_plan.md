@@ -107,20 +107,46 @@ known limits, and security-test evidence to the feature artefacts. Both
 role-specific AI features depend on this gate; they must not implement separate
 LLM clients or bypass server-side authorization/retrieval controls.
 
-### Stage 4 — Deliver the staff material-governance experience
+### Stage 4A — Deliver non-AI staff material governance (approved before Stage 3)
 
 **Owner:** @p-xp.
 
-**Build:** Deliver staff course/membership management; PDF upload and material
-status views; failed-job/retry visibility; and the staff material-consolidation
-flow. Generated knowledge maps, learning objectives, and candidate FAQs remain
-reviewable artefacts with source PDF/page links. Staff approve/reject generated
-artefacts, and only approved/current artefacts and source material become
-eligible for student retrieval.
+**Sequencing decision (human-approved, 2026-10-20):** The staff feature is
+split so the non-AI material experience can proceed while the SoC operating
+envelope is unavailable. The implementation order is Stage 2 → Stage 4A →
+Stage 3 → Stage 4B → Stage 5. Stage 4A uses the Stage 2 course, membership,
+authorization, material, and job contracts; it must not create a parallel AI,
+embedding, retrieval, or consolidation pipeline.
 
-**Verify:** Test upload limits/type handling, processing failures, review
-decisions, material replacement/invalidation, role/course authorization, AI
-security controls, and staff-visible failure states.
+**Build:** Deliver staff PDF upload, material status, delete, and retry
+visibility; and enrolled-student access to active course PDFs through
+Resources. Enforce upload validation, material lifecycle, and server-side
+course/role authorization. Clearly show that AI consolidation is unavailable.
+
+**Verify:** Test upload limits/type handling, non-AI processing failures,
+material replacement/invalidation, role/course authorization, and staff-visible
+failure states.
+
+**Handoff/gate:** Engineer records implementation and tests in the staff
+feature `tasks.md`; independent tester verifies the approved non-AI acceptance
+criteria in `test-report.md`. Completion of Stage 4A does not authorize SoC,
+RAG, embeddings, or consolidation work.
+
+### Stage 4B — Deliver AI-dependent staff material governance (after Stage 3)
+
+**Owner:** @p-xp.
+
+**Prerequisites:** Completed Stage 3 and a recorded, approved SoC operating
+envelope.
+
+**Build:** Deliver the staff material-consolidation flow. Generated knowledge
+maps, learning objectives, and candidate FAQs remain reviewable artefacts with
+source PDF/page links. Staff approve/reject generated artefacts, and only
+approved/current artefacts and source material become eligible for student
+retrieval.
+
+**Verify:** Test consolidation/review decisions, generated-artefact retrieval
+eligibility, AI security controls, and staff-visible AI failure states.
 
 **Handoff/gate:** Engineer records implementation and tests in the staff feature
 `tasks.md`; independent tester verifies the approved acceptance criteria in

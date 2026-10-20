@@ -1,8 +1,8 @@
 # Staff Material Upload, Processing, Review, and Consolidation
 
-Status: Draft — non-AI material behavior ready for human approval; AI implementation remains blocked on SoC operating-envelope confirmation
-Approval: Pending human product-owner review and SoC operating-envelope confirmation
-Last handoff: Product manager → Human product owner / UI designer, 2026-10-20 — recorded replacement, retry, and enrolled-student Resources decisions. The non-AI material flow is ready for approval; AI-dependent work remains blocked on SoC details.
+Status: Approved for Stage 4A non-AI implementation; AI implementation remains blocked on SoC operating-envelope confirmation
+Approval: Human product-owner approval recorded in chat, 2026-10-20 — approved the non-AI material-management scope only.
+Last handoff: Human product owner → Engineer, 2026-10-20 — implement Stage 4A upload, lifecycle, Resources, authorization, and non-AI failure behavior. AI-dependent work remains blocked on SoC details.
 
 ## Purpose and outcome
 

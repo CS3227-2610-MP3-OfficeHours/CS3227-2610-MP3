@@ -4,6 +4,7 @@ import com.sun.net.httpserver.*;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.*;
 import java.util.stream.Collectors;
 import static edu.nus.tahelpdesk.Domain.*;
@@ -41,6 +42,12 @@ public final class HttpApi implements HttpHandler {
     if(p.length==5 && "posts".equals(p[4]) && "GET".equals(method)){respond(x,200,Map.of("posts",service.listPosts(actor,courseId).stream().map(this::post).toList()));return;}
     if(p.length==5 && "posts".equals(p[4]) && "POST".equals(method)){Map<String,Object>b=body(x);respond(x,201,Map.of("post",post(service.createPost(actor,courseId,Json.string(b,"title"),Json.string(b,"description")))));return;}
     if(p.length>=6 && "posts".equals(p[4])) { postRoutes(x,actor,courseId,id(p[5]),p,method);return; }
+    if(p.length==5 && "materials".equals(p[4]) && "GET".equals(method)){respond(x,200,Map.of("materials",service.listMaterials(actor,courseId).stream().map(this::material).toList()));return;}
+    if(p.length==5 && "materials".equals(p[4]) && "POST".equals(method)){Map<String,Object>b=body(x); Material m=service.uploadMaterial(actor,courseId,Json.string(b,"filename"),Json.string(b,"contentType"),base64(Json.string(b,"contentBase64")));respond(x,201,Map.of("material",material(m)));return;}
+    if(p.length==7 && "materials".equals(p[4]) && "retry".equals(p[6]) && "POST".equals(method)){respond(x,200,Map.of("material",material(service.retryMaterial(actor,courseId,id(p[5])))));return;}
+    if(p.length==6 && "materials".equals(p[4]) && "DELETE".equals(method)){service.deleteMaterial(actor,courseId,id(p[5]));respond(x,204,null);return;}
+    if(p.length==5 && "resources".equals(p[4]) && "GET".equals(method)){respond(x,200,Map.of("resources",service.listResources(actor,courseId).stream().map(this::resource).toList()));return;}
+    if(p.length==7 && "resources".equals(p[4]) && "download".equals(p[6]) && "GET".equals(method)){download(x,service.downloadResource(actor,courseId,id(p[5])));return;}
     throw ApiException.hidden();
   }
   private void postRoutes(HttpExchange x, UUID actor, UUID courseId, UUID postId, String[] p, String method) throws IOException {
@@ -57,8 +64,12 @@ public final class HttpApi implements HttpHandler {
   private Map<String,Object> member(Membership m){User u=service.author(m.userId());return Map.of("user",user(u),"membershipRole",m.role().name());}
   private Map<String,Object> post(Post p){User u=service.author(p.authorId()); Map<String,Object> out=new LinkedHashMap<>();out.put("id",p.id().toString());out.put("courseId",p.courseId().toString());out.put("title",p.title());out.put("description",p.description());out.put("renderedDescription",Markdown.render(p.description()));out.put("author",user(u));out.put("createdAt",p.createdAt().toString());out.put("updatedAt",p.updatedAt().toString());return out;}
   private Map<String,Object> comment(Comment c){User u=service.author(c.authorId());Map<String,Object>out=new LinkedHashMap<>();out.put("id",c.id().toString());out.put("postId",c.postId().toString());out.put("body",c.body());out.put("renderedBody",Markdown.render(c.body()));out.put("author",user(u));out.put("createdAt",c.createdAt().toString());out.put("updatedAt",c.updatedAt().toString());return out;}
+  private Map<String,Object> material(Material m){Map<String,Object> out=new LinkedHashMap<>();out.put("id",m.id().toString());out.put("courseId",m.courseId().toString());out.put("filename",m.filename());out.put("status",m.status().name());out.put("pageCount",m.pageCount());out.put("failureMessage",m.failureMessage());out.put("createdAt",m.createdAt().toString());out.put("updatedAt",m.updatedAt().toString());return out;}
+  private Map<String,Object> resource(Material m){return Map.of("id",m.id().toString(),"filename",m.filename(),"downloadPath","/api/courses/"+m.courseId()+"/resources/"+m.id()+"/download");}
   private static UUID id(String text){try{return UUID.fromString(text);}catch(Exception e){throw ApiException.hidden();}}
   private static Map<String,Object> body(HttpExchange x)throws IOException{return Json.object(new String(x.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));}
+  private static byte[] base64(String text) { try { return text == null ? null : Base64.getDecoder().decode(text); } catch (IllegalArgumentException e) { throw ApiException.validation("This file cannot be used. Upload an unprotected, valid PDF."); } }
   private static String token(HttpExchange x){String auth=x.getRequestHeaders().getFirst("Authorization");if(auth!=null&&auth.startsWith("Bearer "))return auth.substring(7);String cookie=x.getRequestHeaders().getFirst("Cookie");if(cookie!=null)for(String piece:cookie.split(";")){String trimmed=piece.trim();if(trimmed.startsWith("ta_session="))return trimmed.substring(11);}return null;}
   private static void respond(HttpExchange x,int status,Object value)throws IOException{byte[]bytes=value==null?new byte[0]:Json.write(value).getBytes(StandardCharsets.UTF_8);x.getResponseHeaders().set("Content-Type","application/json; charset=utf-8");x.getResponseHeaders().set("X-Content-Type-Options","nosniff");x.getResponseHeaders().set("Cache-Control","no-store");x.sendResponseHeaders(status,bytes.length);try(OutputStream out=x.getResponseBody()){out.write(bytes);}}
+  private static void download(HttpExchange x, Material material) throws IOException { byte[] bytes=material.content(); x.getResponseHeaders().set("Content-Type","application/pdf");x.getResponseHeaders().set("Content-Disposition","attachment; filename=\""+material.filename().replace("\"", "'")+"\"");x.getResponseHeaders().set("X-Content-Type-Options","nosniff");x.getResponseHeaders().set("Cache-Control","no-store");x.sendResponseHeaders(200,bytes.length);try(OutputStream out=x.getResponseBody()){out.write(bytes);} }
 }

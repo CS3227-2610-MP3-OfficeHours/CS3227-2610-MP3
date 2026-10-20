@@ -4,6 +4,48 @@ Status: Implemented — ready for independent verification
 Approval: Implementation follows the product-owner-approved spec and design, 2026-10-20
 Last handoff: Engineer → Tester / @ziyang, 2026-10-20 — shared server contract and authorization suite are ready for verification and student UI consumption.
 
+## Auth-entry UI follow-up — 2026-10-21
+
+**Approved scope:** The public entry page now lets a visitor choose Student or
+Staff. Student remains a non-authenticated placeholder. Staff users choose
+between log-in and self-selected staff sign-up; both paths use the existing
+server-authoritative authentication endpoints.
+
+**Changed areas:** `frontend/src/main.tsx` adds the role selector, Student
+placeholder, Staff chooser, and labelled pending/error-aware staff log-in and
+sign-up forms. `frontend/src/styles.css` adds the matching role-card and auth
+form treatments. The sign-up request always sends `role: "staff"`; the UI
+states that staff accounts are not institutionally verified in this test
+project.
+
+**Verification:**
+
+```text
+PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm run build
+git diff --check
+```
+
+Both passed on 2026-10-21. Student authentication and the student dashboard
+remain intentionally unimplemented.
+
+## Staff course-creation UI follow-up — 2026-10-21
+
+**Changed areas:** `frontend/src/main.tsx` now exposes a staff-only **Create
+course** action in the dashboard sidebar and staff empty state. Its labelled
+course-code/name form calls the existing server-authoritative `POST
+/api/courses` endpoint, preserves server validation feedback, prevents
+duplicate submissions, and selects the successfully created course. Students
+receive no create control. `frontend/src/styles.css` adds the form layout.
+
+**Verification:**
+
+```text
+PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm run build
+git diff --check
+```
+
+Both passed on 2026-10-21.
+
 ## Architecture refinement — React/TypeScript + PostgreSQL
 
 **Input decision:** Product Foundation D0-13, approved 2026-10-20. The Java

@@ -2,8 +2,17 @@ package edu.nus.tahelpdesk;
 
 import static edu.nus.tahelpdesk.Domain.*;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.zip.InflaterInputStream;
 
 /** In-memory local adapter. All access methods re-check current memberships. */
 public class PlatformService {
@@ -14,6 +23,24 @@ public class PlatformService {
   private final Map<UUID, Map<UUID, Membership>> memberships = new ConcurrentHashMap<>();
   private final Map<UUID, Post> posts = new ConcurrentHashMap<>();
   private final Map<UUID, Comment> comments = new ConcurrentHashMap<>();
+  private final Map<UUID, Material> materials = new ConcurrentHashMap<>();
+  private final Map<String, Deque<Instant>> materialRetries = new ConcurrentHashMap<>();
+  private static final int MAX_MATERIAL_BYTES = 20 * 1024 * 1024;
+  private static final int MAX_MATERIAL_PAGES = 100;
+  private static final int MAX_ACTIVE_MATERIALS = 20;
+  private static final Pattern PDF_OBJECT = Pattern.compile("(?s)(\\d+)\\s+(\\d+)\\s+obj\\b(.*?)\\bendobj\\b");
+  private static final Pattern PDF_ROOT = Pattern.compile("/Root\\s+(\\d+)\\s+(\\d+)\\s+R\\b");
+  private static final Pattern PDF_PAGES = Pattern.compile("/Pages\\s+(\\d+)\\s+(\\d+)\\s+R\\b");
+  private static final Pattern PDF_KIDS = Pattern.compile("(?s)/Kids\\s*\\[(.*?)]");
+  private static final Pattern PDF_REFERENCE = Pattern.compile("(\\d+)\\s+(\\d+)\\s+R\\b");
+  private static final Pattern PDF_START_XREF = Pattern.compile("(?s)startxref\\s*(\\d+)\\s*%%EOF\\s*$");
+  private static final Pattern PDF_XREF_ENTRY = Pattern.compile("(\\d{10})\\s+(\\d{5})\\s+([nf])\\s*");
+  private static final Pattern PDF_W = Pattern.compile("/W\\s*\\[\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s*]");
+  private static final Pattern PDF_SIZE = Pattern.compile("/Size\\s+(\\d+)\\b");
+  private static final Pattern PDF_LENGTH = Pattern.compile("/Length\\s+(\\d+)\\b");
+  private final ScheduledExecutorService materialProcessor = Executors.newSingleThreadScheduledExecutor(r -> {
+    Thread thread = new Thread(r, "material-processor"); thread.setDaemon(true); return thread;
+  });
   private final PasswordHasher passwords = new PasswordHasher();
   private final Runnable afterMutation;
 
@@ -22,15 +49,16 @@ public class PlatformService {
   PlatformService(Runnable afterMutation) { this.afterMutation = afterMutation; }
   synchronized boolean isEmpty() { return users.isEmpty(); }
   synchronized void restore(Collection<User> loadedUsers, Collection<Course> loadedCourses,
-      Collection<Membership> loadedMemberships, Collection<Post> loadedPosts, Collection<Comment> loadedComments) {
+      Collection<Membership> loadedMemberships, Collection<Post> loadedPosts, Collection<Comment> loadedComments, Collection<Material> loadedMaterials) {
     for (User user : loadedUsers) { users.put(user.id(), user); userByName.put(normalize(user.username()), user.id()); }
     for (Course course : loadedCourses) { courses.put(course.id(), course); courseByCode.put(course.code(), course.id()); memberships.put(course.id(), new ConcurrentHashMap<>()); }
     for (Membership membership : loadedMemberships) memberships.computeIfAbsent(membership.courseId(), ignored -> new ConcurrentHashMap<>()).put(membership.userId(), membership);
     for (Post post : loadedPosts) posts.put(post.id(), post);
     for (Comment comment : loadedComments) comments.put(comment.id(), comment);
+    for (Material material : loadedMaterials) materials.put(material.id(), copyMaterial(material));
   }
-  synchronized Snapshot snapshot() { return new Snapshot(List.copyOf(users.values()), List.copyOf(courses.values()), memberships.values().stream().flatMap(m -> m.values().stream()).toList(), List.copyOf(posts.values()), List.copyOf(comments.values())); }
-  record Snapshot(List<User> users, List<Course> courses, List<Membership> memberships, List<Post> posts, List<Comment> comments) {}
+  synchronized Snapshot snapshot() { return new Snapshot(List.copyOf(users.values()), List.copyOf(courses.values()), memberships.values().stream().flatMap(m -> m.values().stream()).toList(), List.copyOf(posts.values()), List.copyOf(comments.values()), materials.values().stream().map(PlatformService::copyMaterial).toList()); }
+  record Snapshot(List<User> users, List<Course> courses, List<Membership> memberships, List<Post> posts, List<Comment> comments, List<Material> materials) {}
   private void changed() { afterMutation.run(); }
 
   public synchronized User signup(String username, String password, String selectedRole) {
@@ -65,7 +93,49 @@ public class PlatformService {
     Course course = requireCourseStaff(actor, courseId);
     posts.values().removeIf(p -> p.courseId().equals(courseId));
     comments.values().removeIf(c -> !posts.containsKey(c.postId()));
+    materials.entrySet().removeIf(entry -> entry.getValue().courseId().equals(courseId));
     memberships.remove(courseId); courses.remove(courseId); courseByCode.remove(course.code()); changed();
+  }
+  /** Staff-only view includes non-active states; deleted records are intentionally hidden. */
+  public List<Material> listMaterials(UUID actor, UUID courseId) {
+    requireCourseStaff(actor, courseId);
+    return materials.values().stream().filter(m -> m.courseId().equals(courseId) && m.status() != MaterialStatus.deleted)
+        .sorted(Comparator.comparing(Material::createdAt).reversed()).map(PlatformService::copyMaterial).toList();
+  }
+  /** Resource list deliberately exposes only active source PDFs to current course members. */
+  public List<Material> listResources(UUID actor, UUID courseId) {
+    requireCourseMember(actor, courseId);
+    return materials.values().stream().filter(m -> m.courseId().equals(courseId) && m.status() == MaterialStatus.active)
+        .sorted(Comparator.comparing(Material::createdAt).reversed()).map(PlatformService::copyMaterial).toList();
+  }
+  public synchronized Material uploadMaterial(UUID actor, UUID courseId, String filename, String contentType, byte[] content) {
+    requireCourseStaff(actor, courseId); validateMaterial(filename, contentType, content);
+    long existing = materials.values().stream().filter(m -> m.courseId().equals(courseId) &&
+        (m.status() == MaterialStatus.active || m.status() == MaterialStatus.processing)).count();
+    if (existing >= MAX_ACTIVE_MATERIALS) throw ApiException.conflict("This course already has 20 active PDFs. Delete one before uploading another.");
+    int pages = pageCount(content);
+    Instant now = Instant.now();
+    Material material = new Material(UUID.randomUUID(), courseId, actor, safeFilename(filename), MaterialStatus.processing,
+        null, content.clone(), pages, now, now);
+    materials.put(material.id(), material); changed(); scheduleProcessing(material.id()); return copyMaterial(material);
+  }
+  public synchronized void deleteMaterial(UUID actor, UUID courseId, UUID materialId) {
+    requireCourseStaff(actor, courseId); Material old = requireMaterialInCourse(courseId, materialId);
+    if (old.status() == MaterialStatus.deleted) throw ApiException.hidden();
+    materials.put(old.id(), new Material(old.id(), old.courseId(), old.uploaderId(), old.filename(), MaterialStatus.deleted,
+        null, old.content(), old.pageCount(), old.createdAt(), Instant.now())); changed();
+  }
+  public synchronized Material retryMaterial(UUID actor, UUID courseId, UUID materialId) {
+    requireCourseStaff(actor, courseId); Material old = requireMaterialInCourse(courseId, materialId);
+    if (old.status() != MaterialStatus.failed) throw ApiException.validation("Only failed PDF processing can be retried.");
+    enforceRetryLimit(actor, courseId);
+    Material retried = new Material(old.id(), old.courseId(), old.uploaderId(), old.filename(), MaterialStatus.processing,
+        null, old.content(), old.pageCount(), old.createdAt(), Instant.now()); materials.put(old.id(), retried); changed(); scheduleProcessing(retried.id()); return copyMaterial(retried);
+  }
+  public Material downloadResource(UUID actor, UUID courseId, UUID materialId) {
+    requireCourseMember(actor, courseId); Material material = requireMaterialInCourse(courseId, materialId);
+    if (material.status() != MaterialStatus.active) throw ApiException.hidden();
+    return copyMaterial(material);
   }
   public List<Course> listCourses(UUID actor) {
     requireUser(actor); return courses.values().stream().filter(c -> membership(c.id(), actor) != null)
@@ -126,6 +196,7 @@ public class PlatformService {
   private Course requireCourse(UUID id) { Course course = courses.get(id); if (course == null) throw ApiException.hidden(); return course; }
   private Post requirePostInCourse(UUID courseId, UUID postId) { Post post = posts.get(postId); if (post == null || !post.courseId().equals(courseId)) throw ApiException.hidden(); return post; }
   private Comment requireCommentForPost(UUID postId, UUID commentId) { Comment comment = comments.get(commentId); if (comment == null || !comment.postId().equals(postId)) throw ApiException.hidden(); return comment; }
+  private Material requireMaterialInCourse(UUID courseId, UUID materialId) { Material material = materials.get(materialId); if (material == null || !material.courseId().equals(courseId)) throw ApiException.hidden(); return material; }
   private Membership membership(UUID courseId, UUID userId) { Map<UUID, Membership> group = memberships.get(courseId); return group == null ? null : group.get(userId); }
   private static String normalize(String value) { return value == null ? "" : value.trim().toLowerCase(Locale.ROOT); }
   private static String nullable(String value) { return value == null || value.isBlank() ? null : value; }
@@ -136,4 +207,85 @@ public class PlatformService {
   private static void requireCourseName(String value) { if (value == null || value.trim().isEmpty() || value.trim().length() > 160) throw ApiException.validation("Course name is required and must be at most 160 characters."); }
   private static void validatePost(String title, String description) { if (title == null || title.trim().isEmpty() || title.length() > 120) throw ApiException.validation("Post title is required and must be at most 120 characters."); if (description != null && description.length() > 2000) throw ApiException.validation("Description must be at most 2,000 characters."); }
   private static void validateComment(String value) { if (value == null || value.trim().isEmpty()) throw ApiException.validation("Comment text is required."); }
+  private static void validateMaterial(String filename, String contentType, byte[] content) {
+    if (filename == null || filename.isBlank() || filename.length() > 255 || filename.chars().anyMatch(Character::isISOControl)) throw ApiException.validation("Choose a valid PDF filename.");
+    if (!"application/pdf".equalsIgnoreCase(contentType == null ? "" : contentType.trim())) throw ApiException.validation("This file cannot be used. Upload an unprotected, valid PDF.");
+    if (content == null || content.length == 0 || content.length > MAX_MATERIAL_BYTES) throw ApiException.validation(content != null && content.length > MAX_MATERIAL_BYTES ? "This PDF is larger than the 20 MB limit." : "This file cannot be used. Upload an unprotected, valid PDF.");
+    String inspection = new String(content, StandardCharsets.ISO_8859_1);
+    if (!isStructurallyValidPdf(inspection)) throw ApiException.validation("This file cannot be used. Upload an unprotected, valid PDF.");
+    if (pageCount(content) > MAX_MATERIAL_PAGES) throw ApiException.validation("This PDF has more than the 100-page limit.");
+  }
+  private static int pageCount(byte[] content) { String pdf = new String(content, StandardCharsets.ISO_8859_1); return (int) java.util.regex.Pattern.compile("/Type\\s*/Page(?!s)\\b").matcher(pdf).results().count(); }
+  /**
+   * Bounded, dependency-free structural gate. It intentionally accepts only a
+   * conservative PDF subset: an object graph must contain a declared catalog
+   * root, at least one page object, balanced object delimiters, and a terminal
+   * trailer/EOF. This rejects PDF-looking arbitrary bytes before they enter the
+   * asynchronous processor; it is not an attempt to execute PDF content.
+   */
+  private static boolean isStructurallyValidPdf(String pdf) {
+    if (!pdf.startsWith("%PDF-") || pdf.contains("/Encrypt")) return false;
+    Matcher startXref = PDF_START_XREF.matcher(pdf); if (!startXref.find()) return false;
+    int eof = pdf.lastIndexOf("%%EOF");
+    Map<String, PdfObject> objects = new HashMap<>(); int end = 0;
+    Matcher object = PDF_OBJECT.matcher(pdf); while (object.find()) { if (object.start() < end) return false; end = object.end(); String key = object.group(1) + " " + object.group(2); if (objects.putIfAbsent(key, new PdfObject(object.start(), object.group(3))) != null) return false; }
+    int xrefOffset; try { xrefOffset = Integer.parseInt(startXref.group(1)); } catch (NumberFormatException e) { return false; }
+    XrefValidation xref = validateXref(pdf, xrefOffset, objects); if (xref == null) return false;
+    Matcher root = PDF_ROOT.matcher(xref.dictionary()); if (!root.find()) return false;
+    String rootKey = root.group(1) + " " + root.group(2);
+    PdfObject catalogObject = objects.get(rootKey); String catalog = catalogObject == null ? null : catalogObject.body(); if (catalog == null || !catalog.contains("/Type /Catalog")) return false;
+    Matcher pagesReference = PDF_PAGES.matcher(catalog); if (!pagesReference.find()) return false;
+    String pagesKey = pagesReference.group(1) + " " + pagesReference.group(2); PdfObject pagesObject = objects.get(pagesKey); String pages = pagesObject == null ? null : pagesObject.body();
+    if (pages == null || !pages.contains("/Type /Pages")) return false;
+    Matcher kids = PDF_KIDS.matcher(pages); if (!kids.find()) return false;
+    Matcher childReference = PDF_REFERENCE.matcher(kids.group(1)); boolean hasConsistentPage = false;
+    while (childReference.find()) { String childKey = childReference.group(1) + " " + childReference.group(2); PdfObject childObject = objects.get(childKey); String child = childObject == null ? null : childObject.body(); if (child == null) return false; if (child.contains("/Type /Page") && !child.contains("/Type /Pages") && child.contains("/Parent " + pagesKey + " R")) hasConsistentPage = true; }
+    return hasConsistentPage && pageCount(pdf.getBytes(StandardCharsets.ISO_8859_1)) > 0;
+  }
+  private static XrefValidation validateXref(String pdf, int offset, Map<String, PdfObject> objects) {
+    if (offset < 0 || offset >= pdf.length()) return null;
+    if (pdf.startsWith("xref", offset)) { if (!hasValidClassicXref(pdf, offset, objects)) return null; int trailer = pdf.indexOf("trailer", offset); if (trailer < 0) return null; return new XrefValidation(pdf.substring(trailer)); }
+    PdfObject xrefObject = objects.values().stream().filter(o -> o.offset() == offset).findFirst().orElse(null);
+    return xrefObject != null && hasValidXrefStream(xrefObject, objects) ? new XrefValidation(xrefObject.body()) : null;
+  }
+  /** Supports bounded classic xref tables only; xref streams are intentionally not Stage 4A input. */
+  private static boolean hasValidClassicXref(String pdf, int offset, Map<String, PdfObject> objects) {
+    if (offset < 0 || offset >= pdf.length() || !pdf.startsWith("xref", offset)) return false;
+    int cursor = skipPdfWhitespace(pdf, offset + 4); Set<String> indexed = new HashSet<>();
+    while (!pdf.startsWith("trailer", cursor)) {
+      int firstStart = cursor; while (cursor < pdf.length() && Character.isDigit(pdf.charAt(cursor))) cursor++; if (firstStart == cursor) return false;
+      int first; try { first = Integer.parseInt(pdf.substring(firstStart, cursor)); } catch (NumberFormatException e) { return false; }
+      cursor = skipPdfWhitespace(pdf, cursor); int countStart = cursor; while (cursor < pdf.length() && Character.isDigit(pdf.charAt(cursor))) cursor++; if (countStart == cursor) return false;
+      int count; try { count = Integer.parseInt(pdf.substring(countStart, cursor)); } catch (NumberFormatException e) { return false; }
+      cursor = skipPdfLineEnd(pdf, cursor); if (cursor < 0 || count < 0 || count > objects.size() + 1) return false;
+      for (int i = 0; i < count; i++) { int lineEnd = pdf.indexOf('\n', cursor); if (lineEnd < 0) return false; String line = pdf.substring(cursor, lineEnd).replace("\r", ""); Matcher entry = PDF_XREF_ENTRY.matcher(line); if (!entry.matches()) return false; if (entry.group(3).equals("n")) { int generation = Integer.parseInt(entry.group(2)); String key = (first + i) + " " + generation; PdfObject object = objects.get(key); int entryOffset; try { entryOffset = Integer.parseInt(entry.group(1)); } catch (NumberFormatException e) { return false; } if (object == null || object.offset() != entryOffset || !pdf.startsWith((first + i) + " " + generation + " obj", entryOffset) || !indexed.add(key)) return false; } cursor = lineEnd + 1; }
+      cursor = skipPdfWhitespace(pdf, cursor);
+    }
+    return indexed.containsAll(objects.keySet());
+  }
+  /** Bounded support for direct classic xref streams; object-stream entries fail closed. */
+  private static boolean hasValidXrefStream(PdfObject xrefObject, Map<String, PdfObject> objects) {
+    String body = xrefObject.body(); if (!body.contains("/Type /XRef")) return false;
+    Matcher width = PDF_W.matcher(body), sizeMatcher = PDF_SIZE.matcher(body), lengthMatcher = PDF_LENGTH.matcher(body);
+    if (!width.find() || !sizeMatcher.find() || !lengthMatcher.find()) return false;
+    int w0, w1, w2, size, length; try { w0=Integer.parseInt(width.group(1)); w1=Integer.parseInt(width.group(2)); w2=Integer.parseInt(width.group(3)); size=Integer.parseInt(sizeMatcher.group(1)); length=Integer.parseInt(lengthMatcher.group(1)); } catch (NumberFormatException e) { return false; }
+    if (w0 != 1 || w1 < 1 || w1 > 4 || w2 < 0 || w2 > 2 || size < 1 || size > objects.size() + 1 || length < 0 || length > MAX_MATERIAL_BYTES) return false;
+    Matcher index = Pattern.compile("/Index\\s*\\[\\s*0\\s+" + size + "\\s*]").matcher(body); if (body.contains("/Index") && !index.find()) return false;
+    int stream = body.indexOf("stream"); if (stream < 0) return false; int dataStart = stream + 6; if (dataStart < body.length() && body.charAt(dataStart) == '\r') dataStart++; if (dataStart < body.length() && body.charAt(dataStart) == '\n') dataStart++; if (dataStart + length > body.length()) return false;
+    byte[] bytes = body.substring(dataStart, dataStart + length).getBytes(StandardCharsets.ISO_8859_1); if (body.contains("/FlateDecode")) bytes = inflateXref(bytes); else if (body.contains("/Filter")) return false; if (bytes == null) return false;
+    int entryWidth = w0 + w1 + w2; if (entryWidth == 0 || bytes.length != size * entryWidth) return false; Set<String> indexed = new HashSet<>();
+    for (int objectNumber = 0, cursor = 0; objectNumber < size; objectNumber++) { long type = readXrefField(bytes, cursor, w0); cursor += w0; long objectOffset = readXrefField(bytes, cursor, w1); cursor += w1; long generation = readXrefField(bytes, cursor, w2); cursor += w2; if (type == 1) { if (objectOffset > Integer.MAX_VALUE || generation > Integer.MAX_VALUE) return false; String key = objectNumber + " " + generation; PdfObject object = objects.get(key); if (object == null || object.offset() != (int)objectOffset || !indexed.add(key)) return false; } else if (type != 0) return false; }
+    return indexed.containsAll(objects.keySet());
+  }
+  private static long readXrefField(byte[] bytes, int offset, int width) { long value = 0; for (int i = 0; i < width; i++) value = (value << 8) | (bytes[offset + i] & 0xffL); return value; }
+  private static byte[] inflateXref(byte[] bytes) { try (InflaterInputStream input = new InflaterInputStream(new ByteArrayInputStream(bytes)); ByteArrayOutputStream output = new ByteArrayOutputStream()) { byte[] buffer = new byte[512]; int read; while ((read = input.read(buffer)) != -1) { if (output.size() + read > 1_048_576) return null; output.write(buffer, 0, read); } return output.toByteArray(); } catch (Exception e) { return null; } }
+  private static int skipPdfWhitespace(String value, int cursor) { while (cursor < value.length() && Character.isWhitespace(value.charAt(cursor))) cursor++; return cursor; }
+  private static int skipPdfLineEnd(String value, int cursor) { while (cursor < value.length() && (value.charAt(cursor) == ' ' || value.charAt(cursor) == '\t')) cursor++; if (cursor < value.length() && value.charAt(cursor) == '\r') cursor++; if (cursor < value.length() && value.charAt(cursor) == '\n') return cursor + 1; return -1; }
+  private record PdfObject(int offset, String body) {}
+  private record XrefValidation(String dictionary) {}
+  private static String safeFilename(String filename) { return filename.trim().replaceAll("[\\r\\n]", " "); }
+  private static Material copyMaterial(Material m) { return new Material(m.id(), m.courseId(), m.uploaderId(), m.filename(), m.status(), m.failureMessage(), m.content().clone(), m.pageCount(), m.createdAt(), m.updatedAt()); }
+  private void enforceRetryLimit(UUID actor, UUID courseId) { String key = actor + ":" + courseId; Instant cutoff = Instant.now().minusSeconds(60); Deque<Instant> attempts = materialRetries.computeIfAbsent(key, ignored -> new ArrayDeque<>()); while (!attempts.isEmpty() && attempts.peekFirst().isBefore(cutoff)) attempts.removeFirst(); if (attempts.size() >= 3) throw ApiException.rateLimited("You can submit up to 3 retries per minute for this course. Try again shortly."); attempts.addLast(Instant.now()); }
+  private void scheduleProcessing(UUID materialId) { materialProcessor.schedule(() -> completeProcessing(materialId), 25, TimeUnit.MILLISECONDS); }
+  private synchronized void completeProcessing(UUID materialId) { Material old = materials.get(materialId); if (old == null || old.status() != MaterialStatus.processing) return; String pdf = new String(old.content(), StandardCharsets.ISO_8859_1); boolean extractable = pdf.contains("BT") && pdf.contains("ET"); MaterialStatus status = extractable ? MaterialStatus.active : MaterialStatus.failed; String failure = extractable ? null : "This PDF could not be processed. Retry later."; materials.put(old.id(), new Material(old.id(), old.courseId(), old.uploaderId(), old.filename(), status, failure, old.content(), old.pageCount(), old.createdAt(), Instant.now())); changed(); }
 }

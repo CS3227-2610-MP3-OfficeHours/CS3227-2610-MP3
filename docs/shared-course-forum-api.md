@@ -38,3 +38,30 @@ The renderer escapes supplied HTML before applying its small Markdown allowlist;
 clients should use the rendered field for display. There are intentionally no
 attachment or search endpoints. A course or post deletion is hard deletion;
 post deletion cascades its comments.
+
+## Stage 4A course materials
+
+These endpoints keep uploaded bytes private to the server and authorize every
+read again. `contentBase64` is only the temporary JSON transport used by the
+dependency-free local adapter; it is not a public object-storage URL. The
+server accepts `application/pdf` payloads up to 20 MiB after a conservative
+structural PDF gate (classic xref table or direct xref stream with matching
+object offsets and terminal `startxref`, resolved catalog/page-tree/page
+references, object graph, terminal EOF), encryption,
+and page-limit validation. Accepted PDFs begin in `processing`; the local
+non-AI processor later marks them `active` or `failed`.
+
+Stage 4A supports classic xref tables plus direct xref streams with unfiltered
+or safely capped FlateDecode entry data. Other filters and object-stream entry
+types are rejected safely rather than being treated as parseable.
+
+| Method and path | Body | Success | Server rule |
+| --- | --- | --- | --- |
+| `GET/POST /api/courses/{courseId}/materials` | POST: `filename`, `contentType`, `contentBase64` | staff materials / `201 {material}` | Assigned course staff only; POST validates bounded PDF and 20-item capacity. |
+| `DELETE /api/courses/{courseId}/materials/{materialId}` | none | `204` | Assigned course staff only; removed immediately from Resources and future consumers. |
+| `POST /api/courses/{courseId}/materials/{materialId}/retry` | none | processing material | Assigned course staff only; only a failed non-AI processing item can retry, at most three submissions/minute/staff/course. |
+| `GET /api/courses/{courseId}/resources` | none | active resource metadata | Current course members only; returns active PDFs only. |
+| `GET /api/courses/{courseId}/resources/{materialId}/download` | none | `application/pdf` attachment | Current course members only; active PDF and membership are checked for every download. |
+
+There are no consolidation, embedding, RAG, or public storage endpoints in
+Stage 4A.
