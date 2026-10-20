@@ -6,4 +6,5 @@ build/
 .local-lib/
 frontend/node_modules/
 frontend/dist/
+*.tsbuildinfo
 .env
