@@ -1,8 +1,8 @@
 # Shared Identity, Course Membership, and Course-Scoped Forum — UI Design
 
-Status: Draft — Pending human design approval
-Approval: Pending human design approval
-Last handoff: UI designer → Human product owner / @p-xp, 2026-10-20 — implementation-ready account, course, membership, forum, and Resources-entry design; no product behavior changed.
+Status: Approved
+Approval: Human product-owner approval recorded in chat, 2026-10-20
+Last handoff: Human product owner → Engineer, 2026-10-20 — approved for shared platform/server implementation.
 
 ## Scope and visual language
 

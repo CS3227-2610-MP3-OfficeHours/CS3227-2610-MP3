@@ -1,8 +1,8 @@
 # Shared Identity, Course Membership, and Course-Scoped Forum
 
-Status: Draft — ready for human approval
-Approval: Pending human product-owner review
-Last handoff: Product manager → Human product owner / UI designer, 2026-10-20 — recorded confirmed course fields/lifecycle and forum-content rules; ready for approval and then UI design.
+Status: Approved
+Approval: Human product-owner approval recorded in chat, 2026-10-20
+Last handoff: Human product owner → Engineer, 2026-10-20 — approved for shared platform/server implementation.
 
 ## Purpose and outcome
 
