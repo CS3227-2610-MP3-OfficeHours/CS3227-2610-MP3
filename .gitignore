@@ -2,3 +2,8 @@
 .env
 .env.*
 !.env.example
+build/
+.local-lib/
+frontend/node_modules/
+frontend/dist/
+.env

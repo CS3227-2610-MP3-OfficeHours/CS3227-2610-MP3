@@ -10,6 +10,14 @@ Responses are JSON. Failures use
 session, `403` for a role prohibition, `404` for unavailable/protected course
 resources, `409` for unique conflicts, and `422` for malformed input.
 
+## Client boundary
+
+The React + TypeScript client consumes this API with its session cookie (or a
+development bearer token). It must not receive PostgreSQL credentials, send an
+actor/author identifier, or make authorization decisions. The Java server
+continues to resolve identity and current course membership for every request.
+Database-backed and in-memory local runtimes expose the same contract.
+
 | Method and path | Body | Success | Server rule |
 | --- | --- | --- | --- |
 | `POST /api/auth/signup` | `username`, `password`, `role` | `201 {user}` and session cookie | Explicit `student` or `staff`; username unique |

@@ -8,7 +8,11 @@ public final class Main {
     AppConfig config = AppConfig.load();
     int port = config.port();
     HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
-    server.createContext("/", new HttpApi(SeedData.create(), config.production())); server.setExecutor(Executors.newVirtualThreadPerTaskExecutor()); server.start();
+    PlatformService platform = config.usesPostgres()
+        ? PostgresPlatform.open(config.databaseUrl(), config.databaseUser(), config.databasePassword())
+        : SeedData.create();
+    if (config.usesPostgres()) SeedData.seedIfEmpty(platform);
+    server.createContext("/", new HttpApi(platform, config.production())); server.setExecutor(Executors.newVirtualThreadPerTaskExecutor()); server.start();
     System.out.println("TA Help Desk listening on http://localhost:" + port);
   }
 }

@@ -4,6 +4,50 @@ Status: Implemented — ready for independent verification
 Approval: Implementation follows the product-owner-approved spec and design, 2026-10-20
 Last handoff: Engineer → Tester / @ziyang, 2026-10-20 — shared server contract and authorization suite are ready for verification and student UI consumption.
 
+## Architecture refinement — React/TypeScript + PostgreSQL
+
+**Input decision:** Product Foundation D0-13, approved 2026-10-20. The Java
+API remains server-authoritative; this refinement adds no student/staff UI or
+AI/material behavior.
+
+### Changed areas
+
+- `frontend/`: Vite-compatible React 19 + TypeScript strict-mode foundation;
+  it has a deliberately minimal entry point only, with no database variables or
+  credentials.
+- `docker-compose.yml`, `scripts/run-postgres-local.sh`, `.env.example`, and
+  `README.md`: local PostgreSQL 17 developer path and JDBC driver guidance.
+- `PostgresPlatform` and application configuration: validated PostgreSQL JDBC
+  settings, migration tracking/application, durable loading/saving through the
+  existing relational schema, and explicit production refusal to start without
+  PostgreSQL settings. All existing authorization checks remain in
+  `PlatformService`.
+
+### Verification and limitations
+
+```text
+sh scripts/test.sh
+Platform integration tests: PASS
+git diff --check
+```
+
+The dependency-free integration suite continues to cover the authorization
+matrix. PostgreSQL runtime behavior requires a local Docker engine and JDBC
+JAR; they are unavailable in this execution environment, so the Compose-backed
+startup/migration path could not be executed here. `scripts/test-postgres.sh`
+covers restart persistence plus membership-revocation authorization when those
+local prerequisites are present. The adapter loads persisted
+records on startup and writes each successful mutation transactionally. It uses
+a simple whole-state transactional write strategy for this small course project;
+a later performance pass should replace it with targeted repository writes.
+
+### Next handoff
+
+Tester: run `docker compose up -d postgres`, configure a local JDBC JAR, then
+run `sh scripts/run-postgres-local.sh`; restart it and verify seed/user/course
+records survive. Student UI owner: install dependencies under `frontend/` and
+add feature-approved routes/components against `docs/shared-course-forum-api.md`.
+
 ## Delivered scope
 
 - Added a dependency-free Java 25 HTTP application foundation with validated
@@ -64,9 +108,10 @@ No compiler warnings were emitted after the final fix.
 
 ## Limitations and next handoff
 
-- The runnable local persistence adapter is intentionally in-memory. Deployers
-  must wire the supplied SQL migration to a production database repository
-  before production use; doing so does not change the published API contract.
+- The default dependency-free test/local path is in-memory. The documented
+  PostgreSQL path now applies the supplied migration and persists the shared
+  platform state; it still requires a local Docker engine and PostgreSQL JDBC
+  driver, which were unavailable in this execution environment.
 - The execution sandbox prevents TCP listener binding (`SocketException:
   Operation not permitted`), so the HTTP process could not be exercised over a
   socket here. The application compiled and the service-level integration suite
