@@ -1,7 +1,7 @@
 # Staff Material Upload, Processing, Review, and Consolidation
 
 Status: Approved for Stage 4A and the Stage 4B Knowledge Map scope; Stage 4B awaits Stage 3 completion
-Approval: Human product-owner approval recorded in chat, 2026-10-20 and 2026-10-21 — approved non-AI material management, normal SoCLaaS use without published numeric limits, and one manually updated Knowledge Map per course.
+Approval: Human product-owner approval recorded in chat, 2026-10-20 and 2026-10-21 — approved non-AI material management, normal SoCLaaS use without published numeric limits, one manually updated Knowledge Map per course, and authorized-staff display of unverified generated maps (2026-10-21).
 Last handoff: Human product owner → Engineer, 2026-10-21 — implement the approved Stage 3 foundation, then the Stage 4B Knowledge Map flow.
 
 ## Purpose and outcome
@@ -169,10 +169,13 @@ course boundary.
 - A source upload, deletion, or replacement marks the existing map stale
   immediately. Stale maps are excluded from student-AI navigation and must be
   manually regenerated and approved before use.
-- The system must never claim a Knowledge Map generation completed if the SoC service,
-  quota, processing, or grounding check fails. It returns a clear unavailable,
-  rate-limited, failed, or retry-later state without promising provider
-  capacity.
+- If the SoC service returns content but the grounding/provenance check cannot
+  verify every active PDF, the system preserves that content only for
+  authorized course-staff review. It labels it unverified, identifies the
+  source-support gaps where determinable, and blocks approval, student-AI
+  navigation, and publication. Service, quota, or processing failures with no
+  usable returned content remain unavailable, rate-limited, failed, or
+  retry-later states without a provider-capacity promise.
 - Generated Knowledge Map content must be treated as untrusted output. It must not issue
   executable actions, change authorization, alter source-material lifecycle,
   or be automatically published to the forum.
@@ -257,9 +260,9 @@ implementation, and endpoints are engineering decisions after the SoC gate.
 - A staff actor repeatedly submits retries for failed jobs: enforce the interim
   three-per-minute-per-staff-per-course guardrail and return a safe rate-limit
   state; do not represent it as a provider quota.
-- A malicious or hallucinated Knowledge Map claims sources it lacks:
-  label it generated, require traceable source PDF/page support, and fail or
-  withhold it if the approved grounding/provenance validation cannot be met.
+- A malicious or hallucinated Knowledge Map claims sources it lacks: label it
+  generated and unverified, restrict it to authorized course-staff review, and
+  block approval/student use until traceable source PDF/page support validates.
 - An unapproved, rejected, stale, cross-course, or source-invalidated Knowledge
   Map is offered to student retrieval: exclude it server-side. An approval claim or
   reviewer identity supplied by a client or generated content cannot make it
@@ -337,10 +340,11 @@ or substitute provider.
     generated text, the system treats it as untrusted data: it cannot alter
     authorization, storage path, source lifecycle, review decisions, model
     policy, or cause an AI output to be automatically published.
-13. When the SoC service is unavailable, quota-limited, malformed, or fails a
-    required grounding/provenance check, no fabricated or substitute-provider
-    result is shown; staff see an explicit safe unavailable/failed/rate-limited/
-    retry-later state without a provider-capacity promise.
+13. When the SoC service is unavailable, quota-limited, malformed, or returns
+    no usable content, no fabricated or substitute-provider result is shown;
+    staff see an explicit safe unavailable/failed/rate-limited/retry-later
+    state. A returned but unverified map is instead visible only to authorized
+    staff, clearly labelled and not approval-eligible or student-usable.
 14. The final implementation enforces course-staff authorization and the
     Knowledge Map approval/currentness policy with automated positive and
     negative authorization tests, including pending, rejected, stale,

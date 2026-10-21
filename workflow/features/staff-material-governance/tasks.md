@@ -1,6 +1,6 @@
-# Staff Material Governance — Stage 4A Engineering Handoff
+# Staff Material Governance — Engineering Handoff
 
-Status: Implemented locally; awaiting independent verification
+Status: Stage 4A independently verified; Stage 4B staff UI implemented locally and awaiting independent verification
 
 Feature: `staff-material-governance` (approved non-AI Stage 4A only)
 
@@ -59,4 +59,54 @@ consolidation, generated artefacts, or student AI retrieval have been added.
 
 Tester: independently exercise the HTTP routes and browser UI, including an
 enrollment revocation between Resources listing and direct download. Stage 4B
-remains blocked on the SoC operating-envelope decision.
+staff UI now needs independent browser verification against the completed Stage
+3 map routes: no-map, generating/polling, failed, pending-review,
+approve/reject, stale, source citations, and staff-only access.
+
+## Stage 4B — Knowledge Map staff UI
+
+### Delivered
+
+- Replaced the Stage 4A-only consolidation placeholder with the approved
+  staff-only Course Knowledge Map panel in Manage materials.
+- Added manual Generate/Update confirmation using every active PDF; disabled
+  it where no active source exists; and poll the already-authorized staff map
+  endpoint while a job is generating.
+- Added labelled semantic statuses, safe server failure feedback, an explicit
+  pending-review approval/rejection flow, recorded-decision time, and a
+  visibly distinct AI-generated content region.
+- Rendered generated content strictly as text and showed source PDF/page
+  citations as re-authorized Resources download links. No browser code stores
+  a SoCLaaS key or calls the provider directly.
+
+### Local test evidence
+
+- `PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm run build` in
+  `src/frontend` — PASS (`tsc -b && vite build`), 2026-10-21.
+- `sh scripts/test.sh` with the isolated local loopback fake gateway — PASS
+  (`Platform integration tests: PASS`; `SoCLaaS client tests: PASS`),
+  2026-10-21.
+- `git diff --check` — PASS, 2026-10-21.
+
+## Follow-up — hybrid PDF compatibility fix
+
+- Corrected the server upload gate so it accepts standard hybrid xref layouts,
+  compressed object references, and compact `/Type/Name` token syntax emitted
+  by Microsoft PowerPoint while retaining bounded xref decompression and the
+  existing malformed/encrypted-PDF rejections.
+- Added a hybrid-xref integration regression fixture. The supplied `l0.pdf`
+  was accepted through the same server upload method as a 26-page processing
+  material after the fix.
+- Security review: `workflow/security/pdf-hybrid-xref-validation-review.md`.
+
+## Follow-up — staff review of unverified Knowledge Maps
+
+- A returned Knowledge Map that lacks verified PDF/page support is now retained
+  as an explicitly unverified, staff-only pending-review artefact rather than
+  discarded. Its safe message identifies the affected source filenames.
+- The server refuses approval while source-support gaps remain; the UI hides
+  approval and offers Reject/Update instead. Students cannot read, navigate
+  with, or retrieve from this state.
+- Added integration coverage for retained unverified output and server-side
+  approval denial. Security review:
+  `workflow/security/unverified-knowledge-map-review.md`.

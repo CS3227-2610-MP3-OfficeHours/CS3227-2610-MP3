@@ -1,8 +1,150 @@
-# Staff Material Governance — Stage 4A independent verification
+# Staff Material Governance — independent verification
 
-Status: Pass — final independent re-verification recorded, 2026-10-20
-Approval: Verification evidence recorded, 2026-10-20
-Last handoff: Tester → Human reviewer / next feature owner, 2026-10-20 — approved Stage 4A non-AI scope is verified; Stage 4B remains blocked on the SoC operating envelope.
+Status: Pass — final Stage 4B Knowledge Map UI re-verification recorded, 2026-10-21
+Approval: The returned P1 and P2 findings are independently verified as resolved.
+Last handoff: Tester → Human reviewer / acceptance auditor, 2026-10-21 — Stage 4B UI verification has passed; proceed with the required artefact-only completion review.
+
+## Stage 4B Knowledge Map UI independent verification
+
+**Scope:** Approved staff-only Course Knowledge Map UI in
+`src/frontend/src/main.tsx` and `src/frontend/src/styles.css`. This review did
+not alter implementation. It reviewed the approved `spec.md` and `design.md`,
+the current uncommitted frontend diff, and the backing API/service tests.
+
+### Executed checks
+
+| Check | Actual result |
+| --- | --- |
+| `PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm --prefix src/frontend run build` | **PASS** — TypeScript and Vite production build completed. |
+| `sh scripts/test.sh` | **PASS** — `Platform integration tests: PASS` and `SoCLaaS client tests: PASS`. The latter required local loopback permission for its embedded test HTTP server. |
+| `git diff --check` | **PASS** — no whitespace errors. |
+| Static UI/API review | **Completed** — reviewed the staff-only tab condition, panel states/actions, text rendering, source links, and service/API lifecycle tests. No browser-rendering or frontend component-test harness exists in this repository. |
+
+### Acceptance coverage
+
+| Required Stage 4B behavior | Evidence | Assessment |
+| --- | --- | --- |
+| Staff-only access and server boundary | The Manage materials tab and `ManageMaterials` render only when `user.role === "staff"`; the service tests prove students and unrelated course staff receive hidden/denied results for map generate/read. | Pass. |
+| No-map state and manual all-active-source generation | The panel shows an explicit no-map message and disabled Generate control without active PDFs. Generation confirms all active PDF count and calls the manual generate endpoint. Integration tests verify the map snapshots every active source. | Pass. |
+| Generating and stale states | A written `generating` status, source count, and `role="status"` message render; the panel polls while generating. The service test verifies a source change makes a map stale and discards the in-flight result. | Pass. |
+| Safe failure and retry-later presentation | A server-recorded failed map renders a text status plus safe `job-failure` notice and an Update action. Provider rate-limit/unavailability failures are mapped safely by the backing service. However, a failed map **read** is caught and converted to `map = null`, so the UI says “No Knowledge Map has been generated yet” rather than surfacing a safe unavailable/retry state. | **Fail — P1.** |
+| Pending-review approval/rejection | Pending maps provide labelled approve/reject controls and confirmations; backend tests prove only course staff can decide and status becomes approved. | Pass, subject to the reviewer-display defect below. |
+| Decision audit presentation | The API supplies `reviewedBy` and `reviewedAt`, but the UI only renders “Decision recorded <time>.” The approved design requires server-confirmed reviewer **and** time after a decision. | **Fail — P1.** |
+| Source support links | The UI derives `PDF filename — p. N` links from validated map citations and uses the re-authorized course resource download route. Service tests require valid citations for every active source before a map can be pending review. | Pass. |
+| Untrusted map/filename rendering | React renders the map content, filenames, error text, and citation labels as text; no raw HTML insertion is used. Links are generated from IDs/routes, not model-provided URLs. | Pass. |
+
+### Defects returned to engineering
+
+1. **[P1] Map-read failures are misrepresented as an empty map.**
+   In `ManageMaterials.load`, the nested `GET /knowledge-map` catch sets the
+   map to `null` for every error. That is appropriate only for the documented
+   no-map response; a transient/network/5xx response is thereby hidden as
+   “No Knowledge Map has been generated yet.” Preserve the last safely loaded
+   map where possible and show the approved safe unavailable/retry-later state
+   for a failed read.
+
+2. **[P1] The UI omits the reviewer identity after approve/reject.**
+   The API already returns `reviewedBy`; `KnowledgeMapPanel` displays only
+   `reviewedAt`. Display the server-confirmed reviewer and decision time in the
+   read-only approved/rejected summary, as required by the approved design.
+
+### Verdict and next handoff
+
+**Needs changes.** The two P1 UI defects above prevent a pass because they
+leave a required safe failure state and an explicit review-audit field
+unsatisfied. Engineering should address only these findings, add focused UI
+coverage if a harness is introduced, run the build and relevant suite, then
+return the feature for independent re-verification. The Stage 4A evidence
+below remains historical and unchanged.
+
+## Stage 4B targeted re-verification
+
+This re-verification reviewed only the two named P1 findings returned to
+engineering and the directly affected refresh behavior. It did not change
+implementation.
+
+| Re-check | Actual result |
+| --- | --- |
+| `PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm --prefix src/frontend run build` | **PASS** — TypeScript and Vite production build completed. |
+| `sh scripts/test.sh` | **PASS** — `Platform integration tests: PASS` and `SoCLaaS client tests: PASS`; the latter ran with test-only local loopback permission. |
+| `git diff --check` | **PASS** — no whitespace errors. |
+| Targeted source/API review | **Completed** — verified status-carrying API errors, 404-only no-map handling, unavailable/retry rendering, and reviewer/time rendering from the existing response fields. |
+
+### Returned-finding results
+
+1. **Resolved — map-read errors are no longer presented as no map.** `api()`
+   now attaches the HTTP status to its thrown error. The map load treats only
+   a `404` as no map; all other failures set `mapError`. `KnowledgeMapPanel`
+   then renders the text-labelled **Knowledge Map unavailable** alert plus
+   **Try again**, rather than the no-map message.
+
+2. **Resolved — decision audit identity is displayed.** The decision summary
+   now renders `Decision recorded by {reviewedBy} on {reviewedAt}`. The
+   existing API response already supplies both server-recorded fields.
+
+### Remaining defect
+
+1. **[P2] A failed map refresh discards safely loaded map content.** In the
+   non-404 map-read catch branch, `setMap(null)` runs before the unavailable
+   state is shown. Consequently, a staff member who has already loaded an
+   approved/pending map loses its safely loaded review context on a transient
+   refresh failure. The approved design requires network failure to preserve
+   safe loaded data where possible. Retain the prior `map` while displaying
+   the safe unavailable/retry notice; clear it only for the confirmed no-map
+   (`404`) condition or course change.
+
+**Re-verification verdict: Needs changes.** The two original P1s are closed,
+but this P2 leaves the required network-failure behavior incomplete. After the
+small state-handling correction, rerun the frontend build and return the UI
+for one further independent re-verification.
+
+## Stage 4B final P2 re-verification
+
+| Re-check | Actual result |
+| --- | --- |
+| `PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm --prefix src/frontend run build` | **PASS** — TypeScript and Vite production build completed. |
+| `git diff --check` | **PASS** — no whitespace errors. |
+| Targeted refresh-state and rendered-branch review | **Completed** — reviewed `ManageMaterials.load` and `KnowledgeMapPanel` together. |
+
+The state-handling part of the P2 correction is present: a non-404 map read
+failure no longer calls `setMap(null)`, while a confirmed `404` still clears
+the map. However, the UI’s top-level panel branch remains:
+
+```tsx
+mapError ? <unavailable notice> : !map ? <no-map state> : <map panel>
+```
+
+Therefore any `mapError` hides the retained map panel, its content, source
+support, status, and review context. This does not satisfy the approved
+network-failure requirement to preserve safely loaded data *in the UI* where
+possible. Render the unavailable/retry notice alongside (rather than instead
+of) the existing map panel when `map` is present; retain the error-only panel
+for cases with no prior map.
+
+**Final P2 re-verification verdict: Needs changes.** The implementation is
+type-safe and built successfully, but the P2 is not fully resolved in the
+visible staff flow.
+
+## Final Stage 4B P2 presentation re-verification
+
+| Re-check | Actual result |
+| --- | --- |
+| `PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm --prefix src/frontend run build` | **PASS** — TypeScript and Vite production build completed. |
+| `git diff --check` | **PASS** — no whitespace errors. |
+| Targeted rendered-state review | **PASS** — `mapError` independently renders the safe unavailable/`Try again` notice; a retained map independently renders the map panel below it; the no-map text renders only when both `mapError` and `map` are absent. |
+
+The non-404 map-read path retains the current map and records the safe error.
+The panel now renders the failure notice without using it as an exclusive
+branch, then renders the retained status, content, sources, and review context
+when a map exists. A confirmed `404` remains the sole map-read outcome that
+clears the map and shows the genuine no-map state. This satisfies the approved
+network-failure requirement to preserve safely loaded data where possible.
+
+**Final Stage 4B verification verdict: Pass.** All previously named P1/P2
+findings are resolved. The earlier recorded full service/client suite result
+remains applicable because this final remediation only changes frontend
+conditional rendering; the final frontend build and diff validation above were
+run against this exact source revision.
 
 ## Re-verification update
 

@@ -1,7 +1,7 @@
 # Staff Material Governance — UI Design
 
 Status: Approved for Stage 4A and the Stage 4B Knowledge Map UI; Stage 4B awaits Stage 3 completion
-Approval: Human product-owner approval recorded in chat, 2026-10-20 and 2026-10-21 — approved Resources, non-AI Manage materials, and one manually updated Knowledge Map per course.
+Approval: Human product-owner approval recorded in chat, 2026-10-20 and 2026-10-21 — approved Resources, non-AI Manage materials, one manually updated Knowledge Map per course, and staff-only display of returned unverified maps (2026-10-21).
 Last handoff: Human product owner → Engineer, 2026-10-21 — implement Stage 3, then enable the approved Knowledge Map controls.
 
 ## Scope and access boundary
@@ -94,7 +94,17 @@ The `KnowledgeMapPanel` includes a generated label; Current, Stale, Generating, 
 
 For Pending review, display primary **Approve for student AI navigation** and destructive secondary **Reject**. Approval confirmation: “Approve this Knowledge Map? It may help student AI find relevant course resources, but responses must still cite original active PDFs and pages.” Rejection confirmation: “Reject this Knowledge Map? It will not guide student AI retrieval.” A successful immediate decision becomes read-only summary. No reversal/re-review is designed because the spec does not authorize it.
 
-Missing provenance, inactive/deleted sources, failed grounding, or service/request failure withholds the Knowledge Map and shows safe unavailable/failed/rate-limited/retry-later `JobFailureNotice`. Never invent output, use a substitute provider, or permit approval to override invalid sources.
+When the provider returns map content but source support cannot be verified for
+every active PDF, retain the content in `KnowledgeMapPanel` for assigned staff
+only. Precede it with an assertive **Unverified Knowledge Map — staff review
+only** notice that names missing source-support filenames when the server can
+determine them. Keep **Approve for student AI navigation** hidden/disabled;
+show **Reject** and **Update Knowledge Map** instead. Students never receive,
+retrieve from, or navigate with this state. Missing returned content,
+inactive/deleted sources, or service/request failure still withholds the map
+and shows safe unavailable/failed/rate-limited/retry-later `JobFailureNotice`.
+Never invent output, use a substitute provider, or permit approval to override
+an unverified map.
 
 ## Accessibility, responsive behaviour, and states
 
