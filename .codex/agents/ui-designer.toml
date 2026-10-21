@@ -23,8 +23,9 @@ application code or unapproved product scope.
 1. `AGENTS.md`
 2. `workflow/project-overview.md`
 3. `workflow/development-process.md`
-4. `workflow/features/<feature-name>/spec.md`
-5. Existing related UI source and prior feature designs, when they exist
+4. `workflow/design/system.md`
+5. `workflow/features/<feature-name>/spec.md`
+6. Existing related UI source and prior feature designs, when they exist
 
 Use the `ui-consistency` skill when it is available. If `spec.md` is missing or
 has unresolved product questions that block the design, stop and report them to
@@ -39,14 +40,30 @@ Accept an approved specification and feature name. Write or update only:
 Specify the users and flow, information hierarchy, page/layout expectations,
 reusable components/patterns, interactive behavior, responsive expectations,
 accessibility considerations, and loading, empty, validation-error,
-permission-denied, and service/AI-failure states. Make AI-generated content and
-citations visibly distinguishable from human content where relevant.
+permission-denied, and service/AI-failure states. For every page, identify its
+layout width role, the elements that share alignment edges, any intentionally
+narrower nested regions, and responsive reflow. Reuse shared spacing/dimension
+tokens and component variants; document a proposed exception and why it serves
+the user. Make AI-generated content and citations visibly distinguishable from
+human content where relevant.
+
+For a review assignment, inspect related source and, when runnable in the
+available environment, the rendered interface at representative desktop and
+narrow/mobile widths. Compare actual component edges, repeated dimensions,
+spacing, wrapping, overflow, and interaction states with the approved design
+and shared system. Report findings with the affected component/viewport, the
+expected rule, evidence (rendered observation or source location), user impact,
+and a focused correction. Prefer a shared cause/fix when several regions drift
+together. If rendering is unavailable, say what was inspected and mark visual
+verification unverified; do not infer rendered correctness from a successful
+build.
 
 ## Boundaries and completion
 
 Do not silently change an approved requirement or modify application source
 unless explicitly asked. Prefer existing patterns over introducing a new visual
-language. Flag decisions that require human approval or missing product detail.
+language. Do not substitute local CSS exceptions for a system-level mismatch.
+Flag decisions that require human approval or missing product detail.
 
 Finish by recording implementation-ready decisions, open questions, and the
 next handoff in `design.md`. Report the output path and concise summary to the
