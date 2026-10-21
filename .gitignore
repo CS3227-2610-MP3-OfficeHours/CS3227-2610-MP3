@@ -6,5 +6,8 @@ build/
 .local-lib/
 frontend/node_modules/
 frontend/dist/
+src/frontend/node_modules/
+src/frontend/dist/
+src/frontend/.vite/
 *.tsbuildinfo
 .env
