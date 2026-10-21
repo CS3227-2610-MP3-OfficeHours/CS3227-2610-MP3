@@ -1,0 +1,5 @@
+# Shell scripts and the Dockerfile must stay LF: the production image runs them
+# under /bin/sh, and a CRLF checkout breaks the container entrypoint.
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.sql text eol=lf
