@@ -37,7 +37,7 @@ public final class PostgresPlatform {
     try (Statement statement = connection.createStatement()) {
       statement.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version VARCHAR(100) PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)");
     }
-    for (String migration : List.of("V1__shared_course_forum.sql", "V2__course_materials.sql")) {
+    for (String migration : List.of("V1__shared_course_forum.sql", "V2__course_materials.sql", "V3__course_knowledge_maps.sql")) {
       try (PreparedStatement seen = connection.prepareStatement("SELECT 1 FROM schema_migrations WHERE version = ?")) { seen.setString(1, migration); try (ResultSet result = seen.executeQuery()) { if (result.next()) continue; } }
       String sql = Files.readString(Path.of("db/migrations/" + migration)); connection.setAutoCommit(false);
       try (Statement statement = connection.createStatement()) { for (String part : sql.replaceAll("(?m)^--.*$", "").split(";")) if (!part.isBlank()) statement.execute(part); try (PreparedStatement applied = connection.prepareStatement("INSERT INTO schema_migrations(version) VALUES (?)")) { applied.setString(1, migration); applied.executeUpdate(); } connection.commit(); }
@@ -49,7 +49,7 @@ public final class PostgresPlatform {
     private final Connection connection;
     Store(Connection connection) { this.connection = connection; }
     synchronized void loadInto(PlatformService service) throws SQLException {
-      List<User> users = new ArrayList<>(); List<Course> courses = new ArrayList<>(); List<Membership> memberships = new ArrayList<>(); List<Post> posts = new ArrayList<>(); List<Comment> comments = new ArrayList<>(); List<Material> materials = new ArrayList<>();
+      List<User> users = new ArrayList<>(); List<Course> courses = new ArrayList<>(); List<Membership> memberships = new ArrayList<>(); List<Post> posts = new ArrayList<>(); List<Comment> comments = new ArrayList<>(); List<Material> materials = new ArrayList<>(); List<KnowledgeMap> knowledgeMaps = new ArrayList<>();
       try (Statement st = connection.createStatement()) {
         try (ResultSet rs = st.executeQuery("SELECT id, username, role, password_hash, created_at FROM users")) { while (rs.next()) users.add(new User(uuid(rs,1), rs.getString(2), Role.valueOf(rs.getString(3)), rs.getString(4), instant(rs,5))); }
         try (ResultSet rs = st.executeQuery("SELECT id, code, name, created_by, created_at FROM courses")) { while (rs.next()) courses.add(new Course(uuid(rs,1), rs.getString(2), rs.getString(3), uuid(rs,4), instant(rs,5))); }
@@ -57,24 +57,29 @@ public final class PostgresPlatform {
         try (ResultSet rs = st.executeQuery("SELECT id, course_id, author_id, title, description, created_at, updated_at FROM posts")) { while (rs.next()) posts.add(new Post(uuid(rs,1), uuid(rs,2), uuid(rs,3), rs.getString(4), rs.getString(5), instant(rs,6), instant(rs,7))); }
         try (ResultSet rs = st.executeQuery("SELECT id, post_id, author_id, body, created_at, updated_at FROM comments")) { while (rs.next()) comments.add(new Comment(uuid(rs,1), uuid(rs,2), uuid(rs,3), rs.getString(4), instant(rs,5), instant(rs,6))); }
         try (ResultSet rs = st.executeQuery("SELECT id, course_id, uploader_id, filename, status, failure_message, content, page_count, created_at, updated_at FROM course_materials")) { while (rs.next()) materials.add(new Material(uuid(rs,1),uuid(rs,2),uuid(rs,3),rs.getString(4),MaterialStatus.valueOf(rs.getString(5)),rs.getString(6),rs.getBytes(7),rs.getInt(8),instant(rs,9),instant(rs,10))); }
+        try (ResultSet rs = st.executeQuery("SELECT id, course_id, requested_by, status, content, failure_message, source_material_ids, reviewed_by, reviewed_at, created_at, updated_at FROM course_knowledge_maps")) { while (rs.next()) knowledgeMaps.add(new KnowledgeMap(uuid(rs,1),uuid(rs,2),uuid(rs,3),KnowledgeMapStatus.valueOf(rs.getString(4)),rs.getString(5),rs.getString(6),uuidList(rs.getArray(7)),nullableUuid(rs,8),nullableInstant(rs,9),instant(rs,10),instant(rs,11))); }
       }
-      service.restore(users, courses, memberships, posts, comments, materials);
+      service.restore(users, courses, memberships, posts, comments, materials, knowledgeMaps);
     }
     synchronized void save(PlatformService service) {
       try {
         PlatformService.Snapshot state = service.snapshot(); connection.setAutoCommit(false);
-        try (Statement st = connection.createStatement()) { st.executeUpdate("DELETE FROM course_materials"); st.executeUpdate("DELETE FROM comments"); st.executeUpdate("DELETE FROM posts"); st.executeUpdate("DELETE FROM course_memberships"); st.executeUpdate("DELETE FROM courses"); st.executeUpdate("DELETE FROM users"); }
+        try (Statement st = connection.createStatement()) { st.executeUpdate("DELETE FROM course_knowledge_maps"); st.executeUpdate("DELETE FROM course_materials"); st.executeUpdate("DELETE FROM comments"); st.executeUpdate("DELETE FROM posts"); st.executeUpdate("DELETE FROM course_memberships"); st.executeUpdate("DELETE FROM courses"); st.executeUpdate("DELETE FROM users"); }
         try (PreparedStatement q = connection.prepareStatement("INSERT INTO users(id,username,role,password_hash,created_at) VALUES(?,?,?,?,?)")) { for(User x:state.users()){q.setObject(1,x.id());q.setString(2,x.username());q.setString(3,x.role().name());q.setString(4,x.passwordHash());q.setTimestamp(5,Timestamp.from(x.createdAt()));q.addBatch();}q.executeBatch(); }
         try (PreparedStatement q = connection.prepareStatement("INSERT INTO courses(id,code,name,created_by,created_at) VALUES(?,?,?,?,?)")) { for(Course x:state.courses()){q.setObject(1,x.id());q.setString(2,x.code());q.setString(3,x.name());q.setObject(4,x.createdBy());q.setTimestamp(5,Timestamp.from(x.createdAt()));q.addBatch();}q.executeBatch(); }
         try (PreparedStatement q = connection.prepareStatement("INSERT INTO course_memberships(course_id,user_id,membership_role) VALUES(?,?,?)")) { for(Membership x:state.memberships()){q.setObject(1,x.courseId());q.setObject(2,x.userId());q.setString(3,x.role().name());q.addBatch();}q.executeBatch(); }
         try (PreparedStatement q = connection.prepareStatement("INSERT INTO posts(id,course_id,author_id,title,description,created_at,updated_at) VALUES(?,?,?,?,?,?,?)")) { for(Post x:state.posts()){q.setObject(1,x.id());q.setObject(2,x.courseId());q.setObject(3,x.authorId());q.setString(4,x.title());q.setString(5,x.description());q.setTimestamp(6,Timestamp.from(x.createdAt()));q.setTimestamp(7,Timestamp.from(x.updatedAt()));q.addBatch();}q.executeBatch(); }
         try (PreparedStatement q = connection.prepareStatement("INSERT INTO comments(id,post_id,author_id,body,created_at,updated_at) VALUES(?,?,?,?,?,?)")) { for(Comment x:state.comments()){q.setObject(1,x.id());q.setObject(2,x.postId());q.setObject(3,x.authorId());q.setString(4,x.body());q.setTimestamp(5,Timestamp.from(x.createdAt()));q.setTimestamp(6,Timestamp.from(x.updatedAt()));q.addBatch();}q.executeBatch(); }
         try (PreparedStatement q = connection.prepareStatement("INSERT INTO course_materials(id,course_id,uploader_id,filename,status,failure_message,content,page_count,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)")) { for(Material x:state.materials()){q.setObject(1,x.id());q.setObject(2,x.courseId());q.setObject(3,x.uploaderId());q.setString(4,x.filename());q.setString(5,x.status().name());q.setString(6,x.failureMessage());q.setBytes(7,x.content());q.setInt(8,x.pageCount());q.setTimestamp(9,Timestamp.from(x.createdAt()));q.setTimestamp(10,Timestamp.from(x.updatedAt()));q.addBatch();}q.executeBatch(); }
+        try (PreparedStatement q = connection.prepareStatement("INSERT INTO course_knowledge_maps(id,course_id,requested_by,status,content,failure_message,source_material_ids,reviewed_by,reviewed_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)")) { for(KnowledgeMap x:state.knowledgeMaps()){q.setObject(1,x.id());q.setObject(2,x.courseId());q.setObject(3,x.requestedBy());q.setString(4,x.status().name());q.setString(5,x.content());q.setString(6,x.failureMessage());q.setArray(7,connection.createArrayOf("uuid",x.sourceMaterialIds().toArray(UUID[]::new)));q.setObject(8,x.reviewedBy());if(x.reviewedAt()==null)q.setNull(9,Types.TIMESTAMP_WITH_TIMEZONE);else q.setTimestamp(9,Timestamp.from(x.reviewedAt()));q.setTimestamp(10,Timestamp.from(x.createdAt()));q.setTimestamp(11,Timestamp.from(x.updatedAt()));q.addBatch();}q.executeBatch(); }
         connection.commit();
       } catch (SQLException e) { try { connection.rollback(); } catch (SQLException ignored) {} throw new IllegalStateException("PostgreSQL persistence failed.", e); }
       finally { try { connection.setAutoCommit(true); } catch (SQLException ignored) {} }
     }
     private static UUID uuid(ResultSet rs,int index) throws SQLException { return rs.getObject(index, UUID.class); }
+    private static UUID nullableUuid(ResultSet rs,int index) throws SQLException { return rs.getObject(index, UUID.class); }
     private static Instant instant(ResultSet rs,int index) throws SQLException { return rs.getTimestamp(index).toInstant(); }
+    private static Instant nullableInstant(ResultSet rs,int index) throws SQLException { Timestamp value = rs.getTimestamp(index); return value == null ? null : value.toInstant(); }
+    private static List<UUID> uuidList(Array value) throws SQLException { if (value == null) return List.of(); Object[] raw = (Object[]) value.getArray(); List<UUID> ids = new ArrayList<>(); for (Object item : raw) ids.add(item instanceof UUID id ? id : UUID.fromString(item.toString())); return List.copyOf(ids); }
   }
 }

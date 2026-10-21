@@ -18,4 +18,9 @@ public final class Domain {
   public record Material(UUID id, UUID courseId, UUID uploaderId, String filename,
                          MaterialStatus status, String failureMessage, byte[] content,
                          int pageCount, Instant createdAt, Instant updatedAt) {}
+  /** One staff-reviewed navigation aid per course; it is never a student-facing answer. */
+  public enum KnowledgeMapStatus { generating, pending_review, approved, rejected, stale, failed }
+  public record KnowledgeMap(UUID id, UUID courseId, UUID requestedBy, KnowledgeMapStatus status,
+                             String content, String failureMessage, java.util.List<UUID> sourceMaterialIds,
+                             UUID reviewedBy, Instant reviewedAt, Instant createdAt, Instant updatedAt) {}
 }

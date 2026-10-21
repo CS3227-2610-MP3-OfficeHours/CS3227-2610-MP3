@@ -2,10 +2,13 @@
 
 ## Plan status and purpose
 
-**Status: Active — revised 2026-10-21.** Stage 5 is split into Stage 5A
-(forum) and Stage 5B (student AI help) so the non-LLM forum release can proceed
-while the SoC LLM operating envelope is unavailable. This plan still requires
-feature-level approval before work that has not already been approved begins.
+**Status: Active — revised 2026-10-21.** The SoCLaaS integration reference is
+now recorded: it is an OpenAI-compatible, school-hosted gateway at
+`https://soclaas-api.comp.nus.edu.sg/v1`, authenticated by a server-held API
+key. The product owner has accepted normal-use operation without published
+numeric SoCLaaS quotas; the implementation still uses bounded concurrency and
+safe 429/5xx handling. This plan still requires feature-level approval before
+work that has not already been approved begins.
 
 This is the broad delivery order for the two-role University TA Help Desk. It
 preserves the existing work division and adds the approval gates and handoffs
@@ -22,12 +25,12 @@ implementation/verification evidence is recorded for that stage.
 
 | Stage | Status | What is complete / remaining evidence |
 | --- | --- | --- |
-| 0 — scope and guardrails | **Partial** | Product constraints and all recorded product decisions except the SoC operating envelope are captured in `workflow/features/product-foundation/spec.md`. The official model, embedding, quota, and outage details remain outstanding. |
-| 1 — specifications and role flows | **Partial** | The shared-course-forum and Stage 4A staff-material specifications/designs are approved, so Stage 5A has approved product/design inputs. AI/RAG and student-AI specifications remain draft/blocked. |
+| 0 — scope and guardrails | **Partial** | SoCLaaS gateway/API behavior is documented and the staff key can access chat models plus `bge-m3` embeddings. The product owner accepted normal-use operation without published numeric quota/budget/concurrency values; bounded local controls and safe provider-failure handling remain required. |
+| 1 — specifications and role flows | **Partial** | The shared-course-forum, shared Stage 3 staff AI/RAG foundation, and staff Knowledge Map specifications/designs are approved. The student-AI specification, including academic-integrity behavior, remains deferred to its owner. |
 | 2 — shared secure platform | **Partial** | The server-authoritative account, course, membership, forum, PostgreSQL migration, authorization, and API-contract foundation is independently verified in `workflow/features/shared-course-forum/test-report.md`. Role-facing student forum UI remains unfinished. |
-| 3 — shared AI and material-processing services | **Blocked — not started** | No LLM/RAG implementation may start until the SoC operating envelope is recorded and the affected specifications are approved. |
+| 3 — shared AI and material-processing services | **Not started** | The staff key is securely configured, its model catalog is verified, and the staff AI/RAG foundation is approved. Student AI behavior is expressly out of this stage’s current implementation scope. |
 | 4A — non-AI staff material governance | **Complete** | Independently verified as passing in `workflow/features/staff-material-governance/test-report.md`; this excludes every AI/RAG/consolidation capability. |
-| 4B — AI-dependent staff material governance | **Blocked — not started** | Depends on completed Stage 3 and the approved SoC operating envelope. |
+| 4B — AI-dependent staff material governance | **Blocked — not started** | Depends on completed Stage 3; the Knowledge Map specification/design are approved. |
 | 5A — shared student/staff forum experience | **Complete** | Independently verified as passing in `workflow/features/shared-course-forum/test-report.md`: two-role authentication, course/member management, forum post/comment CRUD, moderation boundaries, and safe failure/retry states are implemented. Live multi-session browser verification remains an environment-limited follow-up because this sandbox cannot bind the local Java HTTP listener. |
 | 5B — student AI-help experience | **Blocked — not started** | Depends on Stage 3, suitable approved material fixtures, and the student-AI specification/design approval. |
 | 6 — shared production deployment | **Not started** | Railway topology is approved, but no live deployment, migration, private-storage, or multi-user evidence is recorded. |
@@ -112,9 +115,30 @@ returned to the relevant specification/design for review before implementation.
 
 **Owner:** @p-xp.
 
-**Build:** Implement the guarded SoC LLM integration once for both role
-features, including configuration, quotas/concurrency, timeouts, backoff, safe
-failure handling, and telemetry. Implement course-authorized ingestion and
+**Build:** Implement the guarded SoCLaaS integration once for both role
+features, using its OpenAI-compatible `POST /v1/chat/completions` and
+`POST /v1/embeddings` endpoints. Keep `SOCLAAS_STAFF_API_KEY` and
+`SOCLAAS_STUDENT_API_KEY` only in server/worker secret configuration; set the base URL to
+`https://soclaas-api.comp.nus.edu.sg/v1`; and never expose the key or direct
+gateway access to browsers. At startup/controlled administration time, call
+`GET /v1/models` with the project key and record the returned permitted public
+model IDs, context limits, and which ID has embedding capability. Select model
+IDs from that response rather than hard-coding examples from documentation.
+
+Build a provider adapter with explicit request timeouts, bounded concurrency,
+and structured outcomes. Treat 400 as a non-retryable request/configuration
+failure, 401/403 as a secret/model-policy configuration failure, 429 as either
+rate or budget exhaustion, and 5xx/503 as a transient service failure. Retry
+only idempotent/safely repeatable background jobs with bounded exponential
+backoff and jitter; never automatically re-run an end-user consolidation in a
+way that can create duplicate artefacts. Log correlation ID, operation type,
+model alias, status class, latency, and token usage when supplied, while
+redacting API keys, prompts, PDF text, vectors, and protected course metadata.
+Do not rely on `/v1/responses` conversation state for application workflows:
+its `previous_response_id` cache is process-local, expires after 15 minutes,
+and does not survive restarts.
+
+Implement course-authorized ingestion and
 retrieval: PDF validation/storage, isolated extraction, page-aware chunking,
 provenance, embeddings, versioning/invalidation, and retrieval filtered by the
 requester's authorized course *before* similarity search.
@@ -130,6 +154,25 @@ uploads.
 known limits, and security-test evidence to the feature artefacts. Both
 role-specific AI features depend on this gate; they must not implement separate
 LLM clients or bypass server-side authorization/retrieval controls.
+
+**SoCLaaS readiness checklist (required before this stage's implementation
+gate):**
+
+1. Issue a dedicated project API key through the SoCLaaS portal or
+   `soclaas-portal issue`; store it only in the local/server secret store and
+   confirm it is excluded from Git, browser bundles, logs, and test fixtures.
+2. Use that key to query `GET /v1/models`; record the exact permitted chat and
+   embedding public IDs, context limits, and selection rationale in the Stage 3
+   feature artefact. A chat-only model cannot be used for embeddings.
+3. Use small, non-sensitive test prompts to verify chat and embedding calls,
+   request timeout behaviour, and the configured deployment secret injection.
+4. The product owner has approved normal-use operation without fixed published
+   numeric quota, budget, or concurrency values. Apply bounded local
+   concurrency, neutral quota/rate-limit wording for 429, and the gateway's
+   safe failure states; do not make an availability or capacity guarantee.
+5. Send the minimum authorized PDF excerpt necessary for an operation and do
+   not send forum content by default. Do not claim an external provider
+   retention policy that has not been documented.
 
 ### Stage 4A — Deliver non-AI staff material governance (approved before Stage 3)
 
@@ -162,17 +205,63 @@ RAG, embeddings, or consolidation work.
 
 **Owner:** @p-xp.
 
-**Prerequisites:** Completed Stage 3 and a recorded, approved SoC operating
-envelope.
+**Prerequisites:** Completed Stage 3 and human approval of the updated
+AI-dependent staff specification/design.
 
-**Build:** Deliver the staff material-consolidation flow. Generated knowledge
-maps, learning objectives, and candidate FAQs remain reviewable artefacts with
-source PDF/page links. Staff approve/reject generated artefacts, and only
-approved/current artefacts and source material become eligible for student
-retrieval.
+**Build:** Deliver the staff material-consolidation flow as a server-side,
+asynchronous job with the following implementation slices:
 
-**Verify:** Test consolidation/review decisions, generated-artefact retrieval
-eligibility, AI security controls, and staff-visible AI failure states.
+1. **Eligibility snapshot.** On request, authorize the staff member and course
+   server-side, accept only selected active PDFs from that course, and persist
+   an immutable job snapshot containing material/version IDs and page-aware
+   chunks. Never accept client-provided text, course IDs, approval status, or
+   citation data as authoritative. Reject deleted, failed, processing,
+   cross-course, or stale sources before a provider call.
+2. **Grounded Knowledge Map generation.** Retrieve bounded source chunks from
+   every active PDF in the course, call the selected SoCLaaS chat model through
+   the Stage 3 adapter, and require one structured course Knowledge Map with
+   topics, subtopics, navigation descriptions, and source material IDs/pages.
+   Treat PDF text, filenames, and retrieved content as quoted untrusted data,
+   never as instructions. Enforce output-size and source-count limits derived
+   from the selected model's context window; use deterministic chunk batching
+   rather than silently truncating a course's materials. Learning objectives
+   and candidate FAQs are out of scope.
+3. **Validation and persistence.** Parse the provider response defensively;
+   reject malformed output, invented/missing citations, citations to a source
+   outside the all-active-PDF job snapshot, or output unsupported by active
+   pages. Persist only the generated Knowledge Map marked `pending_review`,
+   with provenance, model public ID, prompt-template version, source-material
+   versions, and safe job outcome metadata. A map is never a forum post and is
+   never automatically student-navigation eligible.
+4. **Review and retrieval boundary.** Permit only currently authorized staff
+   of that course to approve or reject a pending Knowledge Map. Approval must
+   be server-recorded with reviewer/time and re-check that every active source
+   is in the snapshot; rejection, source change, or deletion/invalidation marks
+   it ineligible. Student retrieval may use an approved/current map only for
+   navigation and must still ground every claim in active original PDF filename/
+   page citations.
+5. **Operations and failure UX.** Map 429 to a neutral quota/rate-limited job
+   state, 5xx/503 and retry-safe network timeouts to a retry-later state, and
+   400/401/403 or malformed/ungrounded output to a safe failed state requiring
+   configuration or staff action as appropriate. Preserve no partial artefact
+   on failure, prevent duplicate active jobs for the same normalized source
+   snapshot, and enforce the documented manual retry guardrail.
+
+Each course has at most one current Knowledge Map. A successful staff-requested
+generation produces a reviewable map with source PDF/page links; it becomes
+student-navigation eligible only after authorized staff approval. Uploading,
+deleting, or replacing active source material immediately marks the map stale,
+and stale maps are excluded from student retrieval until staff manually request
+an update and approve its result.
+
+**Verify:** Test the adapter against mocked and recorded-safe SoCLaaS responses
+for 400, 401, 403, 429, 5xx/503, timeout, malformed JSON, and valid chat/
+embedding outcomes; test provider calls only from server/worker code with no
+key in responses/logs. Test map generation/review decisions, one-map-per-course
+enforcement, all-active-PDF source snapshots, stale-on-source-change behavior,
+manual-only updates, student-navigation eligibility, duplicate-job prevention,
+prompt-injection fixtures, forged/cross-course approval attempts, and
+staff-visible AI failure states.
 
 **Handoff/gate:** Engineer records implementation and tests in the staff feature
 `tasks.md`; independent tester verifies the approved acceptance criteria in
@@ -316,12 +405,11 @@ in the relevant feature specification before its implementation gate.
 
 | Decision needed | Why review is needed | Blocks / affects |
 | --- | --- | --- |
-| **Academic-integrity boundary**: what counts as a restricted assessment, how it is identified, and the exact allowed/refused AI-help behavior. | Determines whether AI may give hints, explanations, partial solutions, or refuse; this cannot be inferred safely. | Student AI help, output policy, security tests, user guide. |
+| **Academic-integrity boundary**: what counts as a restricted assessment, how it is identified, and the exact allowed/refused AI-help behavior. | Determines whether AI may give hints, explanations, partial solutions, or refuse; this cannot be inferred safely. | Student Stage 5B AI help, output policy, security tests, user guide; it does not block the approved staff Stage 3/4B path. |
 | **Course membership lifecycle**: who may create courses, add/remove students, and whether students can self-enrol or leave. | Defines authorization and audit requirements. | Shared APIs, staff dashboard, student visibility. |
 | **Forum moderation and visibility policy**: deletion/editing, reporting, staff controls, and visibility of staff/AI-related content. | Changes data lifecycle, role permissions, and user flows. | Forum spec/design and tests. |
 | **Staff approval policy**: whether approved original PDF chunks alone are usable, whether generated consolidation artefacts require approval, and who may approve them. | Governs what the student AI may retrieve and the review workflow. | Ingestion, staff flow, RAG filters, security tests. |
 | **Material limits and retention**: permitted PDF size/page limits, replacement/deletion behavior, retention of old versions and audit logs. | Sets operational cost, privacy, and failure-state behavior. | Upload processing, storage, deployment, documentation. |
-| **SoC LLM operational budget**: available model/embedding capabilities, quotas, rate limits, and acceptable fallbacks. | Determines feasible retrieval/embedding design and user-visible degradation. | Shared AI service, test fixtures, deployment. |
 | **Authentication and tester access approach**: identity provider/login method and how peer testers receive authorized staff/student accounts. | Affects security model, setup effort, and accuracy of the user guide. | Platform foundation, deployment, user guide. |
 | **Deployment target and data handling**: approved hosting, production-data policy, backup/recovery expectations, and production access owners. | Required for separate environments and deployment evidence; cannot be selected by the plan alone. | CI/CD, production configuration, release acceptance. |
 | **Scope triage for the deadline**: the minimum release scope if all listed capabilities cannot be completed. | Prevents silently dropping required AI/security/workflow evidence. | Scheduling and any feature deferral. |

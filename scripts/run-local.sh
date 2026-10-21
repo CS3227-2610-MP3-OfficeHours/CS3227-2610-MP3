@@ -1,5 +1,10 @@
 #!/bin/sh
 set -eu
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
 rm -rf build/classes
 mkdir -p build/classes
 javac --release 25 --add-modules jdk.httpserver -d build/classes $(find src/main/java -name '*.java')

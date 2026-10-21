@@ -1,5 +1,10 @@
 #!/bin/sh
 set -eu
+if [ -f .env ]; then
+  set -a
+  . ./.env
+  set +a
+fi
 
 # The JDBC driver is intentionally local-only and never committed. Download it
 # once into .local-lib/, or set TA_HELP_DESK_JDBC_JAR to its absolute path.

@@ -1,8 +1,8 @@
 # Staff Material Upload, Processing, Review, and Consolidation
 
-Status: Approved for Stage 4A non-AI implementation; AI implementation remains blocked on SoC operating-envelope confirmation
-Approval: Human product-owner approval recorded in chat, 2026-10-20 — approved the non-AI material-management scope only.
-Last handoff: Human product owner → Engineer, 2026-10-20 — implement Stage 4A upload, lifecycle, Resources, authorization, and non-AI failure behavior. AI-dependent work remains blocked on SoC details.
+Status: Approved for Stage 4A and the Stage 4B Knowledge Map scope; Stage 4B awaits Stage 3 completion
+Approval: Human product-owner approval recorded in chat, 2026-10-20 and 2026-10-21 — approved non-AI material management, normal SoCLaaS use without published numeric limits, and one manually updated Knowledge Map per course.
+Last handoff: Human product owner → Engineer, 2026-10-21 — implement the approved Stage 3 foundation, then the Stage 4B Knowledge Map flow.
 
 ## Purpose and outcome
 
@@ -10,8 +10,8 @@ Allow authorized staff to maintain course lecture materials and use the staff
 AI feature to create reviewable supporting knowledge artefacts. The feature
 accepts bounded PDF source material, safely processes it, keeps its origin
 visible, and makes active staff-uploaded source PDFs eligible for student AI
-retrieval. Explicitly approved consolidations may add supporting context but
-may not become the sole authority for student help.
+retrieval. One explicitly approved, current Knowledge Map may guide student
+retrieval but may not become the sole authority for student help.
 
 This is a staff-facing feature owned by **@p-xp**. It depends on the shared
 course authorization contract and later consumes the approved shared AI/RAG
@@ -25,20 +25,24 @@ course boundary.
    maximum of 20 active source PDFs per course.
 3. Password-protected or malformed PDFs are rejected with a clear error.
 4. A staff-uploaded active source PDF is eligible for student AI retrieval only
-   after course authorization is enforced. A generated consolidation may
-   influence student-AI retrieval only after an authorized staff member for
-   that course explicitly approves it. It is supporting material and cannot
-   replace active source PDFs as the sole source of truth; student-facing
+   after course authorization is enforced. The current approved Knowledge Map
+   may guide student-AI retrieval only after an authorized staff member for that
+   course explicitly approves it. It is supporting navigation material and
+   cannot replace active source PDFs as the sole source of truth; student-facing
    claims must still be grounded in and cite original PDF filename/page sources.
 5. Deleting a material item immediately removes it from new retrieval requests.
    Retention/recovery after deletion is out of scope for this test project.
-6. Staff use an AI material-consolidation flow for uploaded lecture PDFs. It
-   produces reviewable knowledge artefacts, such as knowledge maps, learning
-   objectives, and candidate FAQs, with source PDF/page links.
-7. The product uses the SoC LLM service. Its model/embedding capabilities,
-   quotas, rate limits, and detailed retry/backoff behavior are not yet known.
-   Until confirmed, the product must not fabricate results or use an unapproved
-   substitute provider; it shows an explicit unavailable/retry-later state.
+6. Each course has one AI-generated Knowledge Map covering every active course
+   PDF. It organizes topics and subtopics, gives short navigation descriptions,
+   and links each area to its supporting source PDF/pages. Only authorized
+   course staff can manually generate or update it; learning objectives and
+   candidate FAQs are out of scope.
+7. The product uses the SoC LLM service through the shared guarded service.
+   The verified staff key can access chat models and `bge-m3` embeddings. The
+   product owner accepts normal use without published numeric provider limits;
+   the service must use bounded local controls, never fabricate results or use
+   an unapproved substitute provider, and show safe rate-limited/retry-later
+   states when the gateway rejects or cannot complete a request.
 8. PDFs, filenames, generated artefacts, and all AI-related text are untrusted
    input and may contain indirect prompt-injection attempts.
 9. “Authorized course staff” means a staff-role account that created the course
@@ -47,10 +51,9 @@ course boundary.
 10. Replacing a source PDF is delete-then-upload; there is no in-place replace
     operation or revision-history promise.
 11. A failed processing or consolidation job shows authorized course staff a
-    safe error message and a manual retry action. Until official SoC limits are
-    known, the interim product guardrail is at most three manual retry-job
-    submissions per minute per staff member per course. This is not a claimed
-    SoC quota and must be reconciled with the official operating envelope.
+    safe error message and a manual retry action. The application guardrail is
+    at most three manual retry-job submissions per minute per staff member per
+    course; it is an application control, not a claimed provider quota.
 12. Enrolled students may browse and download active course PDFs through a
     dedicated Resources section in that course forum. Every list, metadata,
     download, and citation target remains server-authorized for current course
@@ -63,12 +66,12 @@ course boundary.
 - Safe background processing sufficient to extract material provenance for
   future authorized retrieval and consolidation, with clear processing/failure
   states for staff.
-- Staff-requested consolidation of eligible course source material into
-  reviewable generated artefacts with source PDF/page provenance.
-- Authorized course-staff approval/rejection of generated artefacts before any
-  artefact may influence student-AI retrieval.
+- Staff-requested generation/update of one course Knowledge Map from every
+  active source PDF, with source PDF/page provenance.
+- Authorized course-staff approval/rejection of a generated Knowledge Map
+  before it may guide student-AI retrieval.
 - Server-enforced course/role authorization and material lifecycle checks on
-  uploads, reads, deletes, processing, consolidations, and retrieval eligibility.
+  uploads, reads, deletes, processing, Knowledge Map operations, and retrieval eligibility.
 - Clear validation, capacity, processing-failure, AI-unavailable, and
   permission-denied states.
 - An enrolled-student Resources section that lists and serves only active PDFs
@@ -79,11 +82,14 @@ course boundary.
 - Uploading non-PDF files, student material uploads/deletion, public material
   libraries, cross-course material sharing, or material revision recovery.
 - Backups, retention, restoration, or a promise to recover deleted PDFs.
-- Treating an AI consolidation as the only source for student AI answers.
+- Treating a Knowledge Map as the only source for student AI answers; generating
+  learning objectives, candidate FAQs, multiple concurrent course maps, or
+  automatic map regeneration after a material change.
 - Publishing an AI artefact automatically as a forum answer or substituting an
   unapproved AI provider when SoC service access fails.
-- Final SoC model, embedding, quota, concurrency, retry, or cost design; these
-  remain blocked until official operating details are supplied.
+- A promise of numeric SoCLaaS quota, budget, concurrency, or availability.
+  Selected model IDs and bounded local timeout/concurrency/retry behavior are
+  implementation decisions of the approved shared service.
 - Defining the student AI user flow; that is covered by its own specification.
 
 ## Roles and user stories
@@ -92,8 +98,8 @@ course boundary.
 | --- | --- | --- |
 | Authorized course staff | Add an eligible lecture PDF to my course. | Upload a valid PDF within the stated limits, see whether it is accepted/processing/active/failed, and receive clear validation or capacity errors. |
 | Authorized course staff | Remove a source I no longer want used. | Delete a material item and have it excluded immediately from new student-AI retrieval requests. |
-| Authorized course staff | Organize course source materials using AI. | Request a consolidation, receive a reviewable artefact or an explicit safe failure, and inspect source PDF/page provenance. |
-| Authorized course staff | Control whether generated work is used. | Explicitly approve or reject an artefact; only an approved artefact may influence student-AI retrieval. |
+| Authorized course staff | Organize course source materials using AI. | Manually generate/update the one Knowledge Map from all active PDFs, receive a reviewable map or an explicit safe failure, and inspect source PDF/page provenance. |
+| Authorized course staff | Control whether the map is used. | Explicitly approve or reject the generated map; only an approved, current map may guide student-AI retrieval. |
 | Enrolled student | Receive grounded help without private material leakage. | Access only the later student-AI behavior permitted by that feature; never upload/delete materials or bypass course authorization. |
 | Enrolled student | Read course resources. | Browse and download active PDFs only through the Resources section of a course where the server confirms current enrollment. |
 
@@ -122,6 +128,9 @@ course boundary.
   from all new retrieval/consolidation requests immediately. In-flight jobs and
   cached/indexed outputs must not cause deleted material to appear in a new
   result; exact cancellation mechanics are an implementation concern.
+- An upload, deletion, or replacement of an active source PDF immediately
+  marks the course Knowledge Map stale. The system never starts regeneration
+  automatically; authorized staff choose **Update Knowledge Map** when ready.
 - To replace a PDF, course staff delete the existing material and upload a new
   PDF. The product offers no in-place replacement, retained revision, or
   restoration behavior.
@@ -140,35 +149,40 @@ course boundary.
   actor not authorized for that course.
 - A malformed/unsupported result, extraction failure, or service failure moves
   the material/job to a visible failed state with safe, non-sensitive feedback.
-- A failed processing or consolidation job exposes a safe, non-sensitive error
+- A failed processing or Knowledge Map job exposes a safe, non-sensitive error
   message and a manual retry control to authorized course staff. The server
   permits no more than three such retry-job submissions per minute for the
   same staff member and course. This interim application guardrail applies
   until the official SoC envelope supplies stricter limits; it is not an
   asserted provider quota. Automatic retry/backoff behavior remains pending.
 
-### Consolidation and review
+### Knowledge Map generation and review
 
-- An authorized course staff member can request a consolidation only for
-  source material in that course that is active at request time. The request
-  must use the shared guarded SoC service once available.
-- Generated knowledge maps, learning objectives, and candidate FAQs are
-  clearly labelled as generated supporting artefacts, not authoritative source
-  material. They include links/references to supporting source PDF pages for
-  staff review.
-- The system must never claim a consolidation completed if the SoC service,
+- Each course has at most one current Knowledge Map. An authorized course staff
+  member may manually request generation or update only from every active PDF
+  in that course at request time. The request must use the shared guarded SoC
+  service once available; it never runs automatically after a source change.
+- The map is clearly labelled as generated supporting navigation material, not
+  authoritative source material. It contains topics, subtopics, short
+  navigation descriptions, and links/references to supporting source PDF pages
+  for staff review. Learning objectives and candidate FAQs are not produced.
+- A source upload, deletion, or replacement marks the existing map stale
+  immediately. Stale maps are excluded from student-AI navigation and must be
+  manually regenerated and approved before use.
+- The system must never claim a Knowledge Map generation completed if the SoC service,
   quota, processing, or grounding check fails. It returns a clear unavailable,
-  rate-limited, failed, or retry-later state as appropriate to the approved
-  operating envelope.
-- Generated artefacts must be treated as untrusted output. They must not issue
+  rate-limited, failed, or retry-later state without promising provider
+  capacity.
+- Generated Knowledge Map content must be treated as untrusted output. It must not issue
   executable actions, change authorization, alter source-material lifecycle,
   or be automatically published to the forum.
-- A generated artefact starts pending review. Only an explicit approval by an
-  authorized staff member for the same course makes it retrieval-eligible;
-  rejection or lack of approval keeps it ineligible. It remains derived
-  supporting material linked to source PDFs, never a replacement for active
-  source PDFs or the sole basis for student AI output. Student-facing claims
-  using it must still be grounded in and cite original PDF filename/page sources.
+- A generated Knowledge Map starts pending review. Only an explicit approval by
+  authorized staff for the same course makes it navigation-eligible; rejection,
+  lack of approval, or staleness keeps it ineligible. It remains derived
+  supporting material linked to every active source PDF, never a replacement
+  for active source PDFs or the sole basis for student AI output. Student-facing
+  claims using it must still be grounded in and cite original PDF filename/page
+  sources.
 
 ## Authorization and retrieval rules
 
@@ -181,12 +195,12 @@ returned or any job is started.
 | List/read material metadata or source for staff operations | Denied | Allowed | Actor is course staff for the course. |
 | Upload source PDF | Denied | Allowed | Actor is authorized course staff; course is in scope; file and capacity validation pass. |
 | Delete source PDF | Denied | Allowed | Actor is authorized course staff; material belongs to course. |
-| View processing/consolidation status | Denied | Allowed | Actor is authorized course staff; job/material belongs to course. |
+| View processing/Knowledge Map status | Denied | Allowed | Actor is authorized course staff; job/material belongs to course. |
 | Manually retry failed job | Denied | Allowed | Actor is authorized course staff; job belongs to course and is failed; server applies interim three submissions/minute/staff/course guardrail. |
-| Request consolidation | Denied | Allowed | Actor is authorized course staff; source set is current, active, same-course, and service is available. |
-| Review/approve/reject generated artefact | Denied | Allowed | Actor is authorized course staff for the artefact's course; server records the explicit decision and reviewer. |
+| Generate/update Knowledge Map | Denied | Allowed | Actor is authorized course staff; every active PDF in the same course is included; service is available; regeneration is manual only. |
+| Review/approve/reject generated Knowledge Map | Denied | Allowed | Actor is authorized course staff for the map's course; server records the explicit decision and reviewer. |
 | Student AI retrieval of a source PDF | Only through later student-AI feature when enrolled | N/A | Requester is course-authorized before retrieval; source is active/current/not deleted; result retains source provenance. |
-| Student AI retrieval of a consolidation | Only through later student-AI feature when enrolled | N/A | Requester is enrolled in the course; artefact is explicitly approved by authorized course staff; its supporting sources are active/current/not deleted; result still cites original PDF filename/page sources. |
+| Student AI navigation using a Knowledge Map | Only through later student-AI feature when enrolled | N/A | Requester is enrolled in the course; the one map is explicitly approved, current, and sourced from every active PDF; result still cites original PDF filename/page sources. |
 
 Course staff are defined by the shared course-membership contract: the creator
 is automatically course staff, and course staff may add another staff account
@@ -199,12 +213,13 @@ The shared platform must define documented contracts for, at minimum:
 
 - source material identity, course, uploader, safe display name, lifecycle
   status, validation failure code where relevant, and active/deleted state;
-- processing/consolidation job identity, course, requestor, status, safe
+- processing/Knowledge Map job identity, course, requestor, status, safe
   failure information, and source-material version/set reference;
 - provenance connecting an extracted/retrieved or generated statement to a
   current source PDF and page;
-- generated artefact identity, course, source provenance, pending/approved/
-  rejected status, approval decision time, and reviewer identity; and
+- the single course Knowledge Map identity, source snapshot/version set, topic
+  entries, `generating`/`pending_review`/`approved`/`rejected`/`stale`/`failed`
+  status, approval decision time, and reviewer identity; and
 - authorization-filtered staff material/job reads and mutations.
 
 The material-resource contract must separately support an authorization-filtered
@@ -222,7 +237,7 @@ implementation, and endpoints are engineering decisions after the SoC gate.
 ## Abuse cases and required safeguards
 
 - A student or an unrelated-course actor calls upload, material, job, or
-  consolidation endpoints directly: deny without leaking material existence,
+  Knowledge Map endpoints directly: deny without leaking material existence,
   filename, status, or content.
 - A user submits a renamed non-PDF, oversized, over-page-limit, encrypted, or
   malformed file: reject before active/retrieval eligibility and give safe
@@ -233,24 +248,24 @@ implementation, and endpoints are engineering decisions after the SoC gate.
   prior instructions”: store/process it as untrusted content, never executable
   control instructions, and prevent it from changing AI/system policy.
 - An actor changes a material/job/course identifier: authorize ownership and
-  same-course scope server-side, including source sets for consolidation.
+  same-course scope server-side, including the all-active-source set for a map.
 - A deleted or failed material is referenced by a stale browser/job/index:
-  exclude it from all new retrieval/consolidation results.
+  exclude it from all new retrieval/Knowledge Map results and mark the map stale.
 - A removed student or unrelated-course actor requests a Resources list,
   download, or guessed citation URL: deny without disclosing material
   existence or storage location.
 - A staff actor repeatedly submits retries for failed jobs: enforce the interim
   three-per-minute-per-staff-per-course guardrail and return a safe rate-limit
   state; do not represent it as a provider quota.
-- A malicious or hallucinated generated artefact claims sources it lacks:
+- A malicious or hallucinated Knowledge Map claims sources it lacks:
   label it generated, require traceable source PDF/page support, and fail or
   withhold it if the approved grounding/provenance validation cannot be met.
-- An unapproved, rejected, cross-course, or source-invalidated artefact is
-  offered to student retrieval: exclude it server-side. An approval claim or
+- An unapproved, rejected, stale, cross-course, or source-invalidated Knowledge
+  Map is offered to student retrieval: exclude it server-side. An approval claim or
   reviewer identity supplied by a client or generated content cannot make it
   eligible.
 - SoC service quota/outage/error: show a safe explicit failure; do not invent
-  consolidation output, use a replacement provider, or disclose source content
+  Knowledge Map output, use a replacement provider, or disclose source content
   beyond the requester’s authorization.
 
 ## Dependencies and assumptions
@@ -258,26 +273,27 @@ implementation, and endpoints are engineering decisions after the SoC gate.
 - Depends on `workflow/features/product-foundation/spec.md` and the future
   approved shared course/membership contract.
 - Depends on Stage 2 authorization/storage foundation and Stage 3 shared,
-  guarded SoC/RAG service. It cannot be approved for AI implementation until
-  the SoC operating envelope is confirmed.
+  guarded SoC/RAG service. Published numeric SoCLaaS operating limits are not
+  a prerequisite; the shared service must keep its bounded local controls.
 - Requires a staff-facing `design.md` after the behavioral decisions below are
   approved and before implementation.
 - The user-approved Railway topology provides private object storage and a
   private worker, but this spec does not select storage APIs or queue design.
 
-## Open decisions requiring human review
+## Recorded operating decision
 
-1. **SoC operating envelope (external blocker):** Confirm sanctioned models,
-   embedding availability, call/concurrency quotas, cost/budget behavior, and
-   allowed retry/backoff/fallback behavior. No provider-specific model or quota
-   is assumed in this draft. The interim manual retry guardrail is subject to
-   reconciliation with this decision.
+On 2026-10-21, the human product owner accepted normal SoCLaaS use without
+published numeric quota, budget, or concurrency values. This removes those
+values as an implementation blocker. The feature still depends on Stage 3,
+which selects permitted model IDs from `GET /v1/models`, bounds local work,
+and handles 429, 5xx/503, and timeouts safely without an availability promise
+or substitute provider.
 
 ## Acceptance criteria
 
 1. A student is denied, including by direct request, when attempting to upload,
-   delete, list staff-only material metadata, view processing status, request
-   consolidation, or review an artefact; the response does not disclose
+   delete, list staff-only material metadata, view processing status, generate
+   or review a Knowledge Map; the response does not disclose
    protected material details.
 2. An authorized course staff actor can upload a valid, parseable, unprotected
    PDF of at most 20 MB and 100 pages to their authorized course and sees an
@@ -303,50 +319,50 @@ implementation, and endpoints are engineering decisions after the SoC gate.
    PDF; no in-place replace or old revision remains available. An authorized
    staff member sees a safe error and can manually retry a failed job, while
    the server enforces at most three retry-job submissions per minute for that
-   staff member and course until official SoC limits supersede it.
+   staff member and course as an application guardrail.
 9. An authorized staff deletion immediately excludes the material and its
    derived data from all new student-AI retrieval and consolidation requests;
    stale identifiers, queued work, and cached/indexed data cannot restore it to
    a new result.
-10. An authorized staff actor can request consolidation only for active,
-   same-course source material permitted by the final policy. The result is
-   labelled generated and displays traceable source PDF/page references; it is
-   never automatically posted to the forum.
-11. A consolidation does not become the sole authority for student AI. It may
-   influence student-AI retrieval only after an authorized staff member for
-   that course explicitly approves it; any use retains active source-PDF/page
-   grounding and student-facing citations to original PDF filename/page sources.
+10. An authorized staff actor can manually generate or update the one Knowledge
+   Map only from every active, same-course source PDF. The result is labelled
+   generated and displays traceable source PDF/page references; it is never
+   automatically posted to the forum or automatically regenerated after a
+   material change.
+11. A Knowledge Map does not become the sole authority for student AI. It may
+   guide student-AI retrieval only after an authorized staff member for that
+   course explicitly approves a current map; any use retains active source-PDF/
+   page grounding and student-facing citations to original PDF filename/page sources.
 12. For an indirect prompt-injection payload in a filename/PDF or hostile
     generated text, the system treats it as untrusted data: it cannot alter
     authorization, storage path, source lifecycle, review decisions, model
     policy, or cause an AI output to be automatically published.
 13. When the SoC service is unavailable, quota-limited, malformed, or fails a
     required grounding/provenance check, no fabricated or substitute-provider
-    result is shown; staff see an explicit safe unavailable/failed/retry-later
-    state. The final rate-limit wording/behavior follows the approved SoC
-    operating envelope.
+    result is shown; staff see an explicit safe unavailable/failed/rate-limited/
+    retry-later state without a provider-capacity promise.
 14. The final implementation enforces course-staff authorization and the
-    generated-artefact approval policy with automated positive and negative
-    authorization tests, including pending, rejected, forged-approval, and
-    cross-course cases.
+    Knowledge Map approval/currentness policy with automated positive and
+    negative authorization tests, including pending, rejected, stale,
+    forged-approval, and cross-course cases.
 
 ## Verification evidence expected
 
 Engineering must record test evidence for PDF type/content/size/page/capacity
 validation; direct endpoint denials; cross-course material/job isolation;
 deleted/stale material exclusion; Resources list/download authorization and
-revocation; processing failure/manual-retry rate limiting; provenance; generated
-artefact labelling/approval; retrieval exclusion for pending/rejected/invalidated
-artefacts; SoC failure; and indirect prompt-injection fixtures.
+revocation; processing failure/manual-retry rate limiting; Knowledge Map
+provenance, labelling, approval, manual-only regeneration, and stale-map
+exclusion; SoC failure; and indirect prompt-injection fixtures.
 An independent tester must verify the final staff-authority and approval policy,
 the visible lifecycle states, and that deleted material cannot appear in a new
 AI request.
 
 ## Handoff
 
-**Feature:** `staff-material-governance` — Draft, with all non-AI product
-decisions recorded; pending human approval and SoC operating-envelope
-confirmation for AI-dependent implementation.
+**Feature:** `staff-material-governance` — Stage 4A complete; AI-dependent
+scope pending shared Stage 3 completion and human approval, not numeric SoCLaaS
+operating-limit confirmation.
 
 **Input artefacts:** `AGENTS.md`, `Instructions_and_Planning.md`,
 `workflow/project-overview.md`, `workflow/development-process.md`,
@@ -356,9 +372,6 @@ confirmation for AI-dependent implementation.
 **Deliverable:** This specification only; no UI design, source code, storage
 design, schema, AI-provider call, or tests were created.
 
-**Next owner:** Human product owner approves the documented non-AI material
-behavior. The SoC service owner/human product owner supplies the operating-
-envelope decision before AI-dependent behavior is implementation-approved. The
-UI designer can design the Resources, upload, lifecycle, failure, and retry
-states against this approved behavior; @p-xp implements AI-dependent work only
-against the later approved guarded AI/RAG contract.
+**Next owner:** Human product owner approves the AI-dependent specification and
+design after the shared AI/RAG contract is approved. @p-xp implements
+AI-dependent work only against the later approved guarded AI/RAG contract.

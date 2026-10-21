@@ -9,6 +9,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -24,6 +25,7 @@ public class PlatformService {
   private final Map<UUID, Post> posts = new ConcurrentHashMap<>();
   private final Map<UUID, Comment> comments = new ConcurrentHashMap<>();
   private final Map<UUID, Material> materials = new ConcurrentHashMap<>();
+  private final Map<UUID, KnowledgeMap> knowledgeMaps = new ConcurrentHashMap<>();
   private final Map<String, Deque<Instant>> materialRetries = new ConcurrentHashMap<>();
   private static final int MAX_MATERIAL_BYTES = 20 * 1024 * 1024;
   private static final int MAX_MATERIAL_PAGES = 100;
@@ -38,28 +40,43 @@ public class PlatformService {
   private static final Pattern PDF_W = Pattern.compile("/W\\s*\\[\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s*]");
   private static final Pattern PDF_SIZE = Pattern.compile("/Size\\s+(\\d+)\\b");
   private static final Pattern PDF_LENGTH = Pattern.compile("/Length\\s+(\\d+)\\b");
+  private static final Pattern PDF_TEXT = Pattern.compile("\\((?:\\\\.|[^\\\\)])*\\)\\s*(?:Tj|TJ)");
+  private static final Pattern PDF_PAGE = Pattern.compile("/Type\\s*/Page(?!s)\\b");
+  private static final Pattern PDF_CONTENTS = Pattern.compile("(?s)/Contents\\s*(?:\\[(.*?)]|(\\d+)\\s+(\\d+)\\s+R)");
   private final ScheduledExecutorService materialProcessor = Executors.newSingleThreadScheduledExecutor(r -> {
     Thread thread = new Thread(r, "material-processor"); thread.setDaemon(true); return thread;
   });
+  private final ScheduledExecutorService knowledgeMapProcessor = Executors.newSingleThreadScheduledExecutor(r -> {
+    Thread thread = new Thread(r, "knowledge-map-processor"); thread.setDaemon(true); return thread;
+  });
   private final PasswordHasher passwords = new PasswordHasher();
   private final Runnable afterMutation;
+  private volatile KnowledgeMapGenerator knowledgeMapGenerator;
+  /** Bounds queued and in-flight gateway work when provider capacity is unknown. */
+  private final Semaphore knowledgeMapSlots = new Semaphore(4);
+
+  @FunctionalInterface interface KnowledgeMapGenerator { SoCLaaSClient.Result generate(String sourcePacket); }
 
   public PlatformService() { this(() -> {}); }
   /** Package-private so the PostgreSQL adapter can load state before serving requests. */
   PlatformService(Runnable afterMutation) { this.afterMutation = afterMutation; }
   synchronized boolean isEmpty() { return users.isEmpty(); }
   synchronized void restore(Collection<User> loadedUsers, Collection<Course> loadedCourses,
-      Collection<Membership> loadedMemberships, Collection<Post> loadedPosts, Collection<Comment> loadedComments, Collection<Material> loadedMaterials) {
+      Collection<Membership> loadedMemberships, Collection<Post> loadedPosts, Collection<Comment> loadedComments, Collection<Material> loadedMaterials, Collection<KnowledgeMap> loadedKnowledgeMaps) {
     for (User user : loadedUsers) { users.put(user.id(), user); userByName.put(normalize(user.username()), user.id()); }
     for (Course course : loadedCourses) { courses.put(course.id(), course); courseByCode.put(course.code(), course.id()); memberships.put(course.id(), new ConcurrentHashMap<>()); }
     for (Membership membership : loadedMemberships) memberships.computeIfAbsent(membership.courseId(), ignored -> new ConcurrentHashMap<>()).put(membership.userId(), membership);
     for (Post post : loadedPosts) posts.put(post.id(), post);
     for (Comment comment : loadedComments) comments.put(comment.id(), comment);
     for (Material material : loadedMaterials) materials.put(material.id(), copyMaterial(material));
+    for (KnowledgeMap map : loadedKnowledgeMaps) knowledgeMaps.put(map.courseId(), copyKnowledgeMap(map));
   }
-  synchronized Snapshot snapshot() { return new Snapshot(List.copyOf(users.values()), List.copyOf(courses.values()), memberships.values().stream().flatMap(m -> m.values().stream()).toList(), List.copyOf(posts.values()), List.copyOf(comments.values()), materials.values().stream().map(PlatformService::copyMaterial).toList()); }
-  record Snapshot(List<User> users, List<Course> courses, List<Membership> memberships, List<Post> posts, List<Comment> comments, List<Material> materials) {}
+  synchronized Snapshot snapshot() { return new Snapshot(List.copyOf(users.values()), List.copyOf(courses.values()), memberships.values().stream().flatMap(m -> m.values().stream()).toList(), List.copyOf(posts.values()), List.copyOf(comments.values()), materials.values().stream().map(PlatformService::copyMaterial).toList(), knowledgeMaps.values().stream().map(PlatformService::copyKnowledgeMap).toList()); }
+  record Snapshot(List<User> users, List<Course> courses, List<Membership> memberships, List<Post> posts, List<Comment> comments, List<Material> materials, List<KnowledgeMap> knowledgeMaps) {}
   private void changed() { afterMutation.run(); }
+
+  /** The gateway client is installed only by the application bootstrap, never by a browser request. */
+  void setKnowledgeMapGenerator(KnowledgeMapGenerator generator) { knowledgeMapGenerator = generator; }
 
   public synchronized User signup(String username, String password, String selectedRole) {
     requireUsername(username); requirePassword(password);
@@ -94,6 +111,7 @@ public class PlatformService {
     posts.values().removeIf(p -> p.courseId().equals(courseId));
     comments.values().removeIf(c -> !posts.containsKey(c.postId()));
     materials.entrySet().removeIf(entry -> entry.getValue().courseId().equals(courseId));
+    knowledgeMaps.remove(courseId);
     memberships.remove(courseId); courses.remove(courseId); courseByCode.remove(course.code()); changed();
   }
   /** Staff-only view includes non-active states; deleted records are intentionally hidden. */
@@ -117,20 +135,54 @@ public class PlatformService {
     Instant now = Instant.now();
     Material material = new Material(UUID.randomUUID(), courseId, actor, safeFilename(filename), MaterialStatus.processing,
         null, content.clone(), pages, now, now);
-    materials.put(material.id(), material); changed(); scheduleProcessing(material.id()); return copyMaterial(material);
+    materials.put(material.id(), material); markKnowledgeMapStale(courseId); changed(); scheduleProcessing(material.id()); return copyMaterial(material);
   }
   public synchronized void deleteMaterial(UUID actor, UUID courseId, UUID materialId) {
     requireCourseStaff(actor, courseId); Material old = requireMaterialInCourse(courseId, materialId);
     if (old.status() == MaterialStatus.deleted) throw ApiException.hidden();
     materials.put(old.id(), new Material(old.id(), old.courseId(), old.uploaderId(), old.filename(), MaterialStatus.deleted,
-        null, old.content(), old.pageCount(), old.createdAt(), Instant.now())); changed();
+        null, old.content(), old.pageCount(), old.createdAt(), Instant.now())); markKnowledgeMapStale(courseId); changed();
   }
   public synchronized Material retryMaterial(UUID actor, UUID courseId, UUID materialId) {
     requireCourseStaff(actor, courseId); Material old = requireMaterialInCourse(courseId, materialId);
     if (old.status() != MaterialStatus.failed) throw ApiException.validation("Only failed PDF processing can be retried.");
     enforceRetryLimit(actor, courseId);
     Material retried = new Material(old.id(), old.courseId(), old.uploaderId(), old.filename(), MaterialStatus.processing,
-        null, old.content(), old.pageCount(), old.createdAt(), Instant.now()); materials.put(old.id(), retried); changed(); scheduleProcessing(retried.id()); return copyMaterial(retried);
+        null, old.content(), old.pageCount(), old.createdAt(), Instant.now()); materials.put(old.id(), retried); markKnowledgeMapStale(courseId); changed(); scheduleProcessing(retried.id()); return copyMaterial(retried);
+  }
+  /** Staff-only map status/content. Students deliberately have no equivalent endpoint yet. */
+  public synchronized KnowledgeMap getKnowledgeMap(UUID actor, UUID courseId) {
+    requireCourseStaff(actor, courseId); KnowledgeMap map = knowledgeMaps.get(courseId);
+    if (map == null) throw ApiException.hidden(); return copyKnowledgeMap(map);
+  }
+  /** Starts a manual refresh using every active course PDF as one immutable source snapshot. */
+  public synchronized KnowledgeMap generateKnowledgeMap(UUID actor, UUID courseId) {
+    requireCourseStaff(actor, courseId);
+    if (knowledgeMapGenerator == null) throw ApiException.validation("Staff LLM generation is not configured on this server.");
+    KnowledgeMap prior = knowledgeMaps.get(courseId);
+    if (prior != null && prior.status() == KnowledgeMapStatus.generating) throw ApiException.conflict("A Knowledge Map update is already running for this course.");
+    List<Material> sources = activeMaterials(courseId);
+    if (sources.isEmpty()) throw ApiException.validation("Upload and process at least one PDF before generating a Knowledge Map.");
+    String sourcePacket = sourcePacket(sources);
+    if (!knowledgeMapSlots.tryAcquire()) throw ApiException.rateLimited("The staff LLM queue is busy. Try the manual update again shortly.");
+    Instant now = Instant.now();
+    KnowledgeMap map = new KnowledgeMap(prior == null ? UUID.randomUUID() : prior.id(), courseId, actor, KnowledgeMapStatus.generating,
+        prior == null ? null : prior.content(), null, sources.stream().map(Material::id).toList(), null, null,
+        prior == null ? now : prior.createdAt(), now);
+    knowledgeMaps.put(courseId, map); changed();
+    try { knowledgeMapProcessor.execute(() -> { try { completeKnowledgeMap(map.id(), courseId, map.sourceMaterialIds(), sourcePacket); } finally { knowledgeMapSlots.release(); } }); }
+    catch (RuntimeException e) { knowledgeMapSlots.release(); knowledgeMaps.put(courseId, failedKnowledgeMap(map, "The staff LLM service is temporarily unavailable. Try the manual update again later.")); changed(); throw e; }
+    return copyKnowledgeMap(map);
+  }
+  public synchronized KnowledgeMap approveKnowledgeMap(UUID actor, UUID courseId) {
+    requireCourseStaff(actor, courseId); KnowledgeMap old = requireReviewableKnowledgeMap(courseId);
+    KnowledgeMap approved = new KnowledgeMap(old.id(), old.courseId(), old.requestedBy(), KnowledgeMapStatus.approved, old.content(), null,
+        old.sourceMaterialIds(), actor, Instant.now(), old.createdAt(), Instant.now()); knowledgeMaps.put(courseId, approved); changed(); return copyKnowledgeMap(approved);
+  }
+  public synchronized KnowledgeMap rejectKnowledgeMap(UUID actor, UUID courseId) {
+    requireCourseStaff(actor, courseId); KnowledgeMap old = requireReviewableKnowledgeMap(courseId);
+    KnowledgeMap rejected = new KnowledgeMap(old.id(), old.courseId(), old.requestedBy(), KnowledgeMapStatus.rejected, old.content(), null,
+        old.sourceMaterialIds(), actor, Instant.now(), old.createdAt(), Instant.now()); knowledgeMaps.put(courseId, rejected); changed(); return copyKnowledgeMap(rejected);
   }
   public Material downloadResource(UUID actor, UUID courseId, UUID materialId) {
     requireCourseMember(actor, courseId); Material material = requireMaterialInCourse(courseId, materialId);
@@ -285,6 +337,97 @@ public class PlatformService {
   private record XrefValidation(String dictionary) {}
   private static String safeFilename(String filename) { return filename.trim().replaceAll("[\\r\\n]", " "); }
   private static Material copyMaterial(Material m) { return new Material(m.id(), m.courseId(), m.uploaderId(), m.filename(), m.status(), m.failureMessage(), m.content().clone(), m.pageCount(), m.createdAt(), m.updatedAt()); }
+  private static KnowledgeMap copyKnowledgeMap(KnowledgeMap map) { return new KnowledgeMap(map.id(), map.courseId(), map.requestedBy(), map.status(), map.content(), map.failureMessage(), List.copyOf(map.sourceMaterialIds()), map.reviewedBy(), map.reviewedAt(), map.createdAt(), map.updatedAt()); }
+  private List<Material> activeMaterials(UUID courseId) { return materials.values().stream().filter(m -> m.courseId().equals(courseId) && m.status() == MaterialStatus.active).sorted(Comparator.comparing(Material::createdAt)).map(PlatformService::copyMaterial).toList(); }
+  private KnowledgeMap requireReviewableKnowledgeMap(UUID courseId) { KnowledgeMap map = knowledgeMaps.get(courseId); if (map == null || map.status() != KnowledgeMapStatus.pending_review) throw ApiException.validation("Only a completed Knowledge Map awaiting review can be approved or rejected."); return map; }
+  private void markKnowledgeMapStale(UUID courseId) {
+    KnowledgeMap old = knowledgeMaps.get(courseId);
+    if (old == null || old.status() == KnowledgeMapStatus.stale) return;
+    knowledgeMaps.put(courseId, new KnowledgeMap(old.id(), old.courseId(), old.requestedBy(), KnowledgeMapStatus.stale, old.content(), null,
+        old.sourceMaterialIds(), old.reviewedBy(), old.reviewedAt(), old.createdAt(), Instant.now()));
+  }
+  private static String sourcePacket(List<Material> sources) {
+    StringBuilder packet = new StringBuilder();
+    for (Material source : sources) {
+      List<ExtractedPage> pages = extractPdfPages(source.content());
+      for (ExtractedPage page : pages) packet.append("[SOURCE filename=").append(source.filename()).append(" page=").append(page.number()).append("]\n")
+          .append(page.text().isBlank() ? "(No machine-readable text was extracted from this page.)" : page.text()).append("\n[/SOURCE]\n");
+      if (packet.length() > 120_000) throw ApiException.validation("The active PDFs are too large to map together. Reduce the course material set and try again.");
+    }
+    return packet.toString();
+  }
+  /** Extracts bounded literal text by PDF page; PDF bytes are never executed or treated as instructions. */
+  private static List<ExtractedPage> extractPdfPages(byte[] content) {
+    String pdf = new String(content, StandardCharsets.ISO_8859_1); Map<String, String> objects = new LinkedHashMap<>(); Matcher object = PDF_OBJECT.matcher(pdf);
+    while (object.find()) objects.put(object.group(1) + " " + object.group(2), object.group(3));
+    List<ExtractedPage> pages = new ArrayList<>(); int number = 1;
+    for (String body : objects.values()) {
+      if (!PDF_PAGE.matcher(body).find()) continue;
+      StringBuilder pageText = new StringBuilder(); Matcher contents = PDF_CONTENTS.matcher(body);
+      if (contents.find()) {
+        String references = contents.group(1) == null ? contents.group(2) + " " + contents.group(3) + " R" : contents.group(1);
+        Matcher reference = PDF_REFERENCE.matcher(references);
+        while (reference.find()) pageText.append(extractPdfText(objects.getOrDefault(reference.group(1) + " " + reference.group(2), ""))).append(' ');
+      }
+      pages.add(new ExtractedPage(number++, pageText.toString().trim()));
+    }
+    if (pages.isEmpty()) return List.of(new ExtractedPage(1, extractPdfText(pdf)));
+    if (pages.size() == 1 && pages.getFirst().text().isBlank()) return List.of(new ExtractedPage(1, extractPdfText(pdf)));
+    return List.copyOf(pages);
+  }
+  private static String extractPdfText(String pdf) {
+    StringBuilder text = new StringBuilder(); Matcher matcher = PDF_TEXT.matcher(pdf);
+    while (matcher.find() && text.length() < 24_000) {
+      String literal = matcher.group(); literal = literal.substring(1, literal.lastIndexOf(')')).replaceAll("\\\\([()\\\\])", "$1");
+      text.append(literal).append(' ');
+    }
+    return text.toString().replaceAll("[\\p{Cntrl}&&[^\\n\\t]]", " ").trim();
+  }
+  private record ExtractedPage(int number, String text) {}
+  private void completeKnowledgeMap(UUID mapId, UUID courseId, List<UUID> sourceIds, String sourcePacket) {
+    KnowledgeMapGenerator generator;
+    synchronized (this) {
+      KnowledgeMap current = knowledgeMaps.get(courseId);
+      if (current == null || !current.id().equals(mapId) || current.status() != KnowledgeMapStatus.generating) return;
+      if (!activeMaterials(courseId).stream().map(Material::id).toList().equals(sourceIds)) { markKnowledgeMapStale(courseId); changed(); return; }
+      generator = knowledgeMapGenerator;
+    }
+    SoCLaaSClient.Result result = generator.generate(sourcePacket);
+    synchronized (this) {
+      KnowledgeMap current = knowledgeMaps.get(courseId);
+      if (current == null || !current.id().equals(mapId) || current.status() != KnowledgeMapStatus.generating) return;
+      List<Material> currentSources = activeMaterials(courseId);
+      if (!currentSources.stream().map(Material::id).toList().equals(sourceIds)) { markKnowledgeMapStale(courseId); changed(); return; }
+      Instant now = Instant.now();
+      if (result.succeeded() && hasValidMapCitations(result.text(), currentSources)) {
+        knowledgeMaps.put(courseId, new KnowledgeMap(current.id(), current.courseId(), current.requestedBy(), KnowledgeMapStatus.pending_review,
+            result.text(), null, current.sourceMaterialIds(), null, null, current.createdAt(), now));
+      } else {
+        knowledgeMaps.put(courseId, failedKnowledgeMap(current, result.succeeded() ? "The staff LLM response did not contain valid citations for every active PDF." : knowledgeMapFailure(result.failure())));
+      }
+      changed();
+    }
+  }
+  private static KnowledgeMap failedKnowledgeMap(KnowledgeMap current, String failure) { return new KnowledgeMap(current.id(), current.courseId(), current.requestedBy(), KnowledgeMapStatus.failed, current.content(), failure, current.sourceMaterialIds(), null, null, current.createdAt(), Instant.now()); }
+  private static boolean hasValidMapCitations(String content, List<Material> sources) {
+    if (content == null || content.isBlank()) return false;
+    for (Material source : sources) {
+      Set<Integer> extractedPages = extractPdfPages(source.content()).stream().filter(page -> !page.text().isBlank()).map(ExtractedPage::number).collect(java.util.stream.Collectors.toSet());
+      Pattern citation = Pattern.compile(Pattern.quote(source.filename()) + "\\s*,\\s*p(?:age)?\\.?\\s*(\\d+)", Pattern.CASE_INSENSITIVE);
+      Matcher match = citation.matcher(content); boolean valid = false;
+      while (match.find()) { int page = Integer.parseInt(match.group(1)); if (extractedPages.contains(page)) { valid = true; break; } }
+      if (!valid) return false;
+    }
+    return true;
+  }
+  private static String knowledgeMapFailure(SoCLaaSClient.Failure failure) {
+    return switch (failure) {
+      case configuration -> "The staff LLM service is not configured correctly. Check the server configuration.";
+      case rate_limited -> "The staff LLM service is busy. Try the manual update again shortly.";
+      case temporarily_unavailable -> "The staff LLM service is temporarily unavailable. Try the manual update again later.";
+      case rejected -> "The staff LLM service could not create a Knowledge Map. Review the PDFs and try again.";
+    };
+  }
   private void enforceRetryLimit(UUID actor, UUID courseId) { String key = actor + ":" + courseId; Instant cutoff = Instant.now().minusSeconds(60); Deque<Instant> attempts = materialRetries.computeIfAbsent(key, ignored -> new ArrayDeque<>()); while (!attempts.isEmpty() && attempts.peekFirst().isBefore(cutoff)) attempts.removeFirst(); if (attempts.size() >= 3) throw ApiException.rateLimited("You can submit up to 3 retries per minute for this course. Try again shortly."); attempts.addLast(Instant.now()); }
   private void scheduleProcessing(UUID materialId) { materialProcessor.schedule(() -> completeProcessing(materialId), 25, TimeUnit.MILLISECONDS); }
   private synchronized void completeProcessing(UUID materialId) { Material old = materials.get(materialId); if (old == null || old.status() != MaterialStatus.processing) return; String pdf = new String(old.content(), StandardCharsets.ISO_8859_1); boolean extractable = pdf.contains("BT") && pdf.contains("ET"); MaterialStatus status = extractable ? MaterialStatus.active : MaterialStatus.failed; String failure = extractable ? null : "This PDF could not be processed. Retry later."; materials.put(old.id(), new Material(old.id(), old.courseId(), old.uploaderId(), old.filename(), status, failure, old.content(), old.pageCount(), old.createdAt(), Instant.now())); changed(); }

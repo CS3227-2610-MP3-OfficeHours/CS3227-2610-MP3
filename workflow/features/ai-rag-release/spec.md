@@ -1,8 +1,8 @@
 # Shared AI/RAG Security and Deployment/Release Behavior
 
-Status: Draft — blocked from implementation approval pending SoC operating-envelope details
-Approval: Pending human approval; Phase 0 authorization, material, and Railway decisions are incorporated below.
-Last handoff: Product manager → Human product owner / @p-xp, 2026-10-20 — recorded course-staff scope and approved consolidation-retrieval policy; resolve unavailable SoC details before approval.
+Status: Approved for the Stage 3 staff AI/RAG foundation; student AI policy is deferred to Stage 5B
+Approval: Human product-owner approval recorded in chat, 2026-10-21 — approved Stage 3 and the staff Knowledge Map flow; student academic-integrity behavior belongs to the student owner’s later feature.
+Last handoff: Human product owner → Engineer, 2026-10-21 — implement the approved shared provider/retrieval foundation for staff Knowledge Maps; do not expose student AI behavior yet.
 
 ## Purpose and outcome
 
@@ -32,18 +32,17 @@ controls.
   Resources section in the course forum. The server authorizes every Resources
   list, download, and citation target against current course membership; PDFs
   are never public object-storage URLs.
-- Generated staff consolidations are reviewable supporting artefacts and not
-  the sole source of truth. They may influence student retrieval only after
-  explicit approval by authorized staff for that course; they cannot make an
-  inactive/deleted source eligible for student retrieval, and student-facing
-  claims must still cite original PDF filename/page sources.
+- Each course has one staff-generated, reviewable Knowledge Map that is a
+  navigation aid, not a source of truth. It may guide student retrieval only
+  after explicit approval by authorized staff for that course and only while it
+  is current for every active PDF; student-facing claims must still cite
+  original PDF filename/page sources.
 - PDFs, filenames, extracted text, forum posts/comments, generated artefacts,
   and user prompts are untrusted data, including possible direct and indirect
   prompt injection.
-- Student AI is guidance/train of thought, not a source of specific or readily
-  copy-pasteable answers, and is never automatically published in the forum.
-  A more observable guidance-versus-worked-solution threshold is out of scope
-  for this release.
+- Student academic-integrity behavior and student-facing output policy are
+  deferred to the student owner’s Stage 5B specification. Stage 3 must not
+  expose a student AI endpoint before that policy is approved.
 - Development uses local Docker Compose. Production is a team-owned Railway
   project connected to the team GitHub repository: public web service, private
   PDF/AI worker, PostgreSQL with pgvector and persistent storage, and a private
@@ -55,6 +54,11 @@ controls.
   production deploy happens only after required checks and merge. Backups,
   retention, and recovery are out of scope, though ordinary redeploys must
   retain the database on persistent storage.
+- SoCLaaS applies per-key service levels, queueing/fairness, rate limiting,
+  usage tracking, backend-slot reservation, load balancing, and failover. The
+  product owner accepts normal use without a published numeric quota, budget,
+  or concurrency contract. This is not an availability guarantee: the service
+  must retain bounded local concurrency and safe 429/5xx/timeout outcomes.
 
 ## Scope
 
@@ -62,8 +66,9 @@ This feature covers the common policy/service boundary for:
 
 1. authenticated, course-scoped material ingestion, processing, storage,
    retrieval, provenance, and eligibility changes;
-2. a controlled SoC request boundary for both role features, including
-   versioned system/policy prompts, output validation, and provider failure;
+2. a controlled SoC request boundary for the staff Knowledge Map flow,
+   including versioned prompts, output validation, and provider failure; and
+   a future student-facing consumer contract with no enabled endpoint;
 3. defenses and test evidence for direct and indirect prompt injection,
    cross-course access, hostile uploads, unauthorized source use, and
    policy-violating model output;
@@ -76,9 +81,9 @@ This feature covers the common policy/service boundary for:
 
 ### Explicit non-goals
 
-- Selecting a SoC model, embeddings provider/method, rate/concurrency values,
-  quota budget, queue policy, timeout/backoff values, or provider outage
-  contract before those official details are available.
+- Promising a numeric SoCLaaS quota, budget, concurrency level, or service
+  availability. Model selection, bounded client concurrency, timeouts, and
+  retry/backoff values are engineering decisions validated by tests.
 - Replacing the staff-material or student-AI specifications and their required
   UI designs.
 - Public material hosting, a public database, cross-course search, anonymous
@@ -131,20 +136,22 @@ by user or retrieved content. It must:
    assistance and source-linked staff generated artefacts;
 4. reject/safely suppress malformed, uncited, cross-course, stale/inactive,
    unsupported, or policy-violating output rather than presenting it as valid;
-5. preserve the student guidance-only/no-copy-pasteable-answer policy and
-   prevent automatic forum publication; and
+5. prevent automatic forum publication and avoid exposing a student AI
+   response path until the student feature’s academic-integrity policy is
+   approved; and
 6. prevent retrieved text from requesting credentials, hidden prompts, changed
    policy, broader tool access, or unauthorized external actions.
 
-For staff consolidation, generated artefacts remain reviewable outputs rather
-than instructions or authority. A consolidation derived from source PDFs may
-influence student retrieval only when authorized staff for that course have
-explicitly approved it. The shared service must exclude pending, rejected,
-deleted, cross-course, or source-invalidated artefacts and must still ground
-student-facing claims in active original PDF filename/page sources. The
-staff-material specification owns the review user flow; this shared feature
-guarantees that untrusted source text cannot self-approve itself or change
-eligibility.
+For staff Knowledge Maps, the generated map remains a reviewable navigation
+output rather than instructions or authority. There is at most one current map
+per course; its source snapshot comprises every active PDF in that course.
+An upload, deletion, or replacement immediately marks the map stale. Only an
+authorized staff member may manually request regeneration and approve the
+result. The shared service excludes pending, rejected, stale, deleted,
+cross-course, or source-invalidated maps and must still ground student-facing
+claims in active original PDF filename/page sources. The staff-material
+specification owns the review user flow; this shared feature guarantees that
+untrusted source text cannot self-approve itself or change eligibility.
 
 ## User-visible failure and safe fallback behavior
 
@@ -154,11 +161,11 @@ processing failure, rate/quota limitation, temporarily unavailable SoC service,
 and rejected unsafe/malformed output. They must retain access to unrelated
 authorized non-AI functionality where possible.
 
-Until the SoC operating envelope is known, a rate/quota/provider failure
-means: show an unavailable/retry-later result, do not fabricate a result, do
-not silently switch provider, and do not leak whether an unauthorized course
-has material. Exact retry, queueing, concurrency, and timeout behavior is
-blocked rather than assumed.
+For a rate/quota/provider failure, show a safe rate-limited or
+unavailable/retry-later result, do not fabricate a result, do not silently
+switch provider, and do not leak whether an unauthorized course has material.
+The implementation selects bounded timeout, queueing, concurrency, and retry
+values and verifies them; it must not promise provider capacity.
 
 ## Threat and abuse cases
 
@@ -177,8 +184,8 @@ for all of the following:
 - stale, inactive, deleted, uncited, or wrong-course sources and
   fabricated/malformed provider output;
 - removed-student, cross-course, or guessed direct-resource download attempts;
-- pending, rejected, forged-approved, cross-course, or source-invalidated
-  consolidations offered as student-AI context;
+- pending, rejected, forged-approved, stale, cross-course, or source-invalidated
+  Knowledge Maps offered as student-AI navigation context;
 - SoC rate limits, quota exhaustion, timeout/outage, and secrets accidentally
   supplied in source material, prompts, responses, exceptions, or logs; and
 - malicious attempts to auto-publish AI content or use a client call to bypass
@@ -213,31 +220,35 @@ without including secrets, personal data, or raw protected material.
 - A UI design for each role-specific, user-facing AI flow.
 - An independent tester's final evidence against the release criteria.
 
-### Blocking SoC decision — do not infer
+### Recorded SoCLaaS operating decision
 
-The SoC service owner/human product owner must provide and record:
+On 2026-10-21, the human product owner accepted normal-use operation without
+published numeric quota, budget, or concurrency values. The verified staff-key
+catalog includes `bge-m3` for embeddings and `gemma4:26b`, `llama3.1:8b`,
+`ornith1.5:35b`, `qwen3.5:9b`, `qwen3.6:35b`, `qwen3.8:27b`,
+`qwen3-coder-next`, and `qwen3-vl:32b` for chat (plus operator aliases and
+test models). Engineering must select only IDs returned by the relevant key's
+`GET /v1/models` response.
 
-1. permitted LLM model(s) and their relevant input/output limits;
-2. available embedding capability and its approved use, if any;
-3. request, concurrency, and quota/budget limits;
-4. official rate-limit/error/outage semantics; and
-5. the accepted behavior if no suitable embedding capability is available.
+This removes numerical provider limits as an implementation blocker. It does
+not permit unbounded submission, an availability promise, or a fallback
+provider. The common service must use bounded local concurrency; treat 429 as
+neutral quota/rate limiting; treat 5xx/503/timeouts as temporary failure; and
+retain the safe no-fabrication/no-leakage behavior. A separate student key must
+be catalogued before student-AI implementation, but is not required for the
+staff-only shared-service work.
 
-Only after this decision can engineering choose an embedding/retrieval design,
-configure concrete queue/retry/timeout behavior, set user-visible usage-limit
-copy, or claim AI service availability. The approved safe fallback before then
-is an explicit unavailable/retry-later state with no substitute provider and
-no fabricated result.
+### Confirmed Knowledge Map policy
 
-### Confirmed generated-consolidation retrieval policy
-
-Staff-generated consolidation artefacts may influence student-AI retrieval in
-addition to active source PDFs only after explicit approval by authorized staff
-for the artefact's course. They are supporting context, not replacement source
-material or the sole basis for student-AI output. The server must record and
-authorize the approval, exclude pending/rejected/deleted/cross-course or
-source-invalidated artefacts, and retain original PDF filename/page citations
-for every student-facing material claim.
+Each course has one Knowledge Map generated only from its active PDFs. Staff
+manually request its generation or update; the system never regenerates it
+automatically. A source upload, deletion, or replacement immediately marks the
+map stale. A map may guide student-AI retrieval only after authorized staff
+approve the newly generated map and only while it remains current. It is
+supporting navigation context, not replacement source material or the sole
+basis for student-AI output. The server records and authorizes approval,
+excludes pending/rejected/stale/deleted/cross-course or source-invalidated maps,
+and retains original PDF filename/page citations for every student-facing claim.
 
 ## Acceptance criteria
 
@@ -255,9 +266,8 @@ for every student-facing material claim.
    policy, change authorization, reveal prompts/secrets, broaden retrieval,
    self-approve material, trigger an external action, or auto-publish to the
    forum.
-5. Student AI output cannot contain the requested specific or
-   readily-copy-pasteable answer when tested with defined restricted-answer
-   prompts; it returns only allowed guidance/refusal/redirect behavior.
+5. Stage 3 exposes no student AI response endpoint. The student feature defines
+   and tests its academic-integrity behavior before any such endpoint is enabled.
 6. Invalid PDFs and uploads outside the PDF/20 MB/100-page/20-active-per-course
    limits are rejected before they become retrieval eligible, and only staff
    may upload/delete course material.
@@ -277,27 +287,24 @@ for every student-facing material claim.
    release evidence includes authorization/security/AI negative tests,
    environment boundary checks, an ordinary-redeploy persistence check, and an
    independent tester report.
-11. Before implementation acceptance, the official SoC operating-envelope
-    decision is recorded and the concrete implementation/test limits are added
-    to this specification or an approved linked decision record. Without it,
-    the shared AI/RAG feature remains blocked rather than silently assumed.
-12. Student-AI retrieval may use an approved consolidation only as supporting
-    context. The implementation server-verifies authorized same-course staff
-    approval and current supporting sources, excludes every other artefact
-    state, and retains original PDF filename/page grounding for student-facing
-    claims.
+11. The implementation documents its selected permitted model IDs and bounded
+    local timeout/concurrency/retry values, verifies safe 429/5xx/timeout
+    behavior, and makes no numeric provider-capacity claim.
+12. Student-AI retrieval may use only the single approved, current course
+    Knowledge Map as navigation context. The implementation server-verifies
+    same-course staff approval and a source snapshot containing every active
+    PDF, excludes every other map state, and retains original PDF filename/page
+    grounding for student-facing claims.
 
 ## Required approvals and next handoff
 
-**Approval required:** Human product owner approves this shared feature after
-the SoC decision is supplied.
-The Railway topology is already approved, but
+**Approval:** The human product owner approved the Stage 3 staff foundation on
+2026-10-21. The SoCLaaS normal-use decision is recorded above; the Railway topology is already approved, but
 implementation must still verify it. Security controls or scope changes that
 weaken course authorization, grounding, or the academic-integrity boundary
 require renewed human review.
 
-**Next owner:** @p-xp turns the approved contract into shared implementation
-tasks only after the SoC gate and role-specific UI designs are approved. The
-engineer records implementation/test evidence in `tasks.md`; an independent
-tester writes `test-report.md`. The product manager updates this specification
-if the official SoC contract changes any user-visible behavior.
+**Next owner:** @p-xp implements the shared staff provider/retrieval foundation
+and records implementation/test evidence in `tasks.md`; an independent tester
+writes `test-report.md`. The student owner supplies the separate academic-
+integrity policy before any student AI implementation begins.
