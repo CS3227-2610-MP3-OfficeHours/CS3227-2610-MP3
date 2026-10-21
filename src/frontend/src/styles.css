@@ -7,3 +7,6 @@
 
 .no-replies{margin:0;padding:.25rem 0}
 .replies{margin-top:1.5rem}
+:root{--staff-badge-bg:#FEF08A;--staff-badge-fg:#713F12}
+.badge.staff-badge{background:var(--staff-badge-bg);color:var(--staff-badge-fg)}
+.staff-author-badge{font-size:.7rem;font-weight:700;letter-spacing:.02em;padding:.12rem .4rem;text-transform:uppercase;vertical-align:middle}

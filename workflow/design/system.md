@@ -71,6 +71,11 @@ justifies it and the design records it.
   item alignment.
 - Banners and status badges: use consistent semantic treatment and plain-language
   labels. Errors explain recovery where possible.
+- Staff role badges: use one shared yellow fill (`#FEF08A`) with dark brown text
+  (`#713F12`) in the account header, course `Staff access` context, member list,
+  and staff-authored forum content. Use a compact uppercase `STAFF` label beside
+  a staff author's name; keep the badge text visible so role is not conveyed by
+  color alone. Student role badges keep the neutral blue treatment.
 - Empty states: explain why the region is empty and provide only an action the
   current role is allowed to take.
 - Dialogs: identify the action and consequence; support keyboard focus,
