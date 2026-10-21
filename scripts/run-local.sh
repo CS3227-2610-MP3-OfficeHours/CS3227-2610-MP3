@@ -1,5 +1,6 @@
 #!/bin/sh
 set -eu
+./scripts/ensure-pdfbox.sh
 if [ -f .env ]; then
   set -a
   . ./.env
@@ -7,5 +8,6 @@ if [ -f .env ]; then
 fi
 rm -rf build/classes
 mkdir -p build/classes
-javac --release 25 --add-modules jdk.httpserver -d build/classes $(find src/main/java -name '*.java')
-exec java --add-modules jdk.httpserver -cp build/classes edu.nus.tahelpdesk.Main
+PDFBOX_JAR=.local-lib/pdfbox-app-3.0.8.jar
+javac --release 25 --add-modules jdk.httpserver -cp "$PDFBOX_JAR" -d build/classes $(find src/main/java -name '*.java')
+exec java --add-modules jdk.httpserver -cp "build/classes:$PDFBOX_JAR" edu.nus.tahelpdesk.Main

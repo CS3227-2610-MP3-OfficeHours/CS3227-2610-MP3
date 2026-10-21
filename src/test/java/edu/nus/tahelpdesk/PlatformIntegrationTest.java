@@ -7,6 +7,11 @@ import java.util.zip.DeflaterOutputStream;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 
 /** Dependency-free integration tests for the server authorization boundary. */
 public final class PlatformIntegrationTest {
@@ -82,15 +87,10 @@ public final class PlatformIntegrationTest {
     s.deleteMaterial(staffA.id(), first.id(), material.id());
     check(s.listResources(alice.id(), first.id()).isEmpty(), "deleted PDF immediately leaves resources");
     expect(404, () -> s.downloadResource(alice.id(), first.id(), material.id()), "deleted PDF is not downloadable");
-    Material xrefStream = s.uploadMaterial(staffA.id(), first.id(), "xref-stream.pdf", "application/pdf", xrefStreamPdf(true, false));
-    waitFor(xrefStream.id(), MaterialStatus.active);
-    s.deleteMaterial(staffA.id(), first.id(), xrefStream.id());
     Material failed = s.uploadMaterial(staffA.id(), first.id(), "scanned.pdf", "application/pdf", pdf(false));
-    waitFor(failed.id(), MaterialStatus.failed);
-    check(s.listResources(alice.id(), first.id()).isEmpty(), "failed PDF stays out of Resources");
-    Material retried = s.retryMaterial(staffA.id(), first.id(), failed.id());
-    check(retried.status() == MaterialStatus.processing, "staff retry returns processing state");
-    waitFor(failed.id(), MaterialStatus.failed);
+    waitFor(failed.id(), MaterialStatus.resource_only);
+    check(s.listResources(alice.id(), first.id()).size() == 1, "image-only PDF remains downloadable as a resource");
+    check(s.downloadResource(alice.id(), first.id(), failed.id()).content().length > 0, "image-only PDF download remains authorized");
   }
   private void knowledgeMapLifecycle() {
     Material source = s.uploadMaterial(staffA.id(), first.id(), "Week 2.pdf", "application/pdf", twoPagePdf());
@@ -98,54 +98,59 @@ public final class PlatformIntegrationTest {
     s.setKnowledgeMapGenerator(packet -> {
       check(packet.contains("Week 2.pdf page=1") && packet.contains("Hello") && packet.contains("Week 2.pdf page=2") && packet.contains("Second page"), "map input preserves active PDF page text");
       return SoCLaaSClient.Result.success("Topic: introduction (Week 2.pdf, p. 1)");
-    });
-    expect(404, () -> s.generateKnowledgeMap(alice.id(), first.id()), "student cannot generate a Knowledge Map");
-    expect(404, () -> s.generateKnowledgeMap(staffB.id(), second.id()), "staff cannot generate a cross-course Knowledge Map");
-    KnowledgeMap started = s.generateKnowledgeMap(staffA.id(), first.id());
-    check(started.status() == KnowledgeMapStatus.generating, "manual map generation starts asynchronously");
-    waitForMap(KnowledgeMapStatus.pending_review);
-    KnowledgeMap pending = s.getKnowledgeMap(staffA.id(), first.id());
-    check(pending.sourceMaterialIds().equals(java.util.List.of(source.id())), "map snapshots every active source PDF");
-    expect(404, () -> s.getKnowledgeMap(alice.id(), first.id()), "student cannot read staff Knowledge Map");
-    check(s.approveKnowledgeMap(staffB.id(), first.id()).status() == KnowledgeMapStatus.approved, "course staff can approve completed map");
-    Material secondSource = s.uploadMaterial(staffA.id(), first.id(), "Week 3.pdf", "application/pdf", pdf(true));
-    check(s.getKnowledgeMap(staffA.id(), first.id()).status() == KnowledgeMapStatus.stale, "source upload immediately marks map stale");
-    waitFor(secondSource.id(), MaterialStatus.active);
-    s.setKnowledgeMapGenerator(packet -> SoCLaaSClient.Result.success("Week 2.pdf, p. 1\nWeek 3.pdf, p. 1"));
-    s.generateKnowledgeMap(staffA.id(), first.id()); waitForMap(KnowledgeMapStatus.pending_review);
-    check(s.getKnowledgeMap(staffA.id(), first.id()).sourceMaterialIds().equals(java.util.List.of(source.id(), secondSource.id())), "map snapshots every active PDF, not just one source");
-    CountDownLatch providerStarted = new CountDownLatch(1), releaseProvider = new CountDownLatch(1);
-    s.setKnowledgeMapGenerator(packet -> { providerStarted.countDown(); try { if (!releaseProvider.await(2, TimeUnit.SECONDS)) return SoCLaaSClient.Result.failure(SoCLaaSClient.Failure.temporarily_unavailable); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } return SoCLaaSClient.Result.success("Week 2.pdf, p. 1\nWeek 3.pdf, p. 1"); });
-    s.generateKnowledgeMap(staffA.id(), first.id());
-    try { check(providerStarted.await(2, TimeUnit.SECONDS), "provider call began before stale-race check"); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new AssertionError(e); }
-    s.uploadMaterial(staffA.id(), first.id(), "Week 4.pdf", "application/pdf", pdf(true));
-    check(s.getKnowledgeMap(staffA.id(), first.id()).status() == KnowledgeMapStatus.stale, "source change during generation discards eventual result");
-    releaseProvider.countDown();
+    }, true);
+    check(s.knowledgeMapFallbackConfigured(staffA.id(), first.id()), "authorized course staff sees fallback capability");
+    expect(404, () -> s.knowledgeMapFallbackConfigured(alice.id(), first.id()), "student cannot query fallback capability");
+    expect(404, () -> s.generateKnowledgeMap(alice.id(), first.id(), source.id()), "student cannot generate a Knowledge Map");
+    expect(404, () -> s.generateKnowledgeMap(staffB.id(), second.id(), source.id()), "staff cannot generate a cross-course Knowledge Map");
+    s.generateKnowledgeMap(staffA.id(), first.id(), source.id()); waitForMap(source.id(), KnowledgeMapJobStatus.completed);
+    KnowledgeMap pending = candidate(source.id()); check(pending.materialId().equals(source.id()) && pending.verificationMessage() == null, "one-PDF request produces verified candidate");
+    s.setKnowledgeMapGenerator(packet -> SoCLaaSClient.Result.failure(SoCLaaSClient.Failure.temporarily_unavailable));
+    s.generateKnowledgeMap(staffA.id(), first.id(), source.id()); waitForMap(source.id(), KnowledgeMapJobStatus.failed);
+    check(candidate(source.id()) != null && candidate(source.id()).content().contains("Topic"), "failed update retains candidate map");
+    check(s.approveKnowledgeMap(staffB.id(), first.id(), source.id()).status() == KnowledgeMapStatus.approved, "course staff can approve candidate");
+    s.generateKnowledgeMap(staffA.id(), first.id(), source.id()); waitForMap(source.id(), KnowledgeMapJobStatus.failed);
+    check(approved(source.id()) != null && approved(source.id()).content().contains("Topic"), "failed update retains approved map");
     s.setKnowledgeMapGenerator(packet -> SoCLaaSClient.Result.success("A map without source citations"));
-    s.generateKnowledgeMap(staffA.id(), first.id());
-    waitForMap(KnowledgeMapStatus.failed);
-    check(s.getKnowledgeMap(staffA.id(), first.id()).failureMessage().contains("valid citations"), "uncited map output is rejected");
+    s.generateKnowledgeMap(staffA.id(), first.id(), source.id()); waitForMap(source.id(), KnowledgeMapJobStatus.completed);
+    KnowledgeMap unverified = candidate(source.id()); check(unverified.verificationMessage().contains("Unverified"), "uncited map remains staff-only candidate");
+    expect(422, () -> s.approveKnowledgeMap(staffA.id(), first.id(), source.id()), "unverified candidate cannot be approved");
+    s.setKnowledgeMapGenerator(packet -> SoCLaaSClient.Result.success("Topic (Other.pdf, p. 1)"));
+    s.generateKnowledgeMap(staffA.id(), first.id(), source.id()); waitForMap(source.id(), KnowledgeMapJobStatus.completed);
+    check(candidate(source.id()).verificationMessage().contains("Unverified"), "foreign citation remains unverified");
+    expect(422, () -> s.approveKnowledgeMap(staffA.id(), first.id(), source.id()), "foreign citation cannot be approved");
+    s.setKnowledgeMapGenerator(packet -> SoCLaaSClient.Result.success("Topic (Week 2.pdf, p. 99)"));
+    s.generateKnowledgeMap(staffA.id(), first.id(), source.id()); waitForMap(source.id(), KnowledgeMapJobStatus.completed);
+    check(candidate(source.id()).verificationMessage().contains("Unverified"), "stale page citation remains unverified");
+    expect(422, () -> s.approveKnowledgeMap(staffA.id(), first.id(), source.id()), "stale page citation cannot be approved");
+    s.rejectKnowledgeMap(staffA.id(), first.id(), source.id()); check(candidate(source.id()) == null && approved(source.id()) != null, "rejection removes only candidate");
   }
   private void knowledgeMapQueueLimit() {
     CountDownLatch providerStarted = new CountDownLatch(1), releaseProvider = new CountDownLatch(1);
     s.setKnowledgeMapGenerator(packet -> { providerStarted.countDown(); try { releaseProvider.await(2, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } return SoCLaaSClient.Result.success("queue.pdf, p. 1"); });
     java.util.List<Course> queueCourses = new java.util.ArrayList<>();
     for (int i = 0; i < 5; i++) { Course course = s.createCourse(staffA.id(), "Q" + (1000 + i), "Queue " + i); queueCourses.add(course); Material material = s.uploadMaterial(staffA.id(), course.id(), "queue.pdf", "application/pdf", pdf(true)); waitFor(course.id(), material.id(), MaterialStatus.active); }
-    for (int i = 0; i < 4; i++) s.generateKnowledgeMap(staffA.id(), queueCourses.get(i).id());
+    for (int i = 0; i < 4; i++) { Material m=s.listMaterials(staffA.id(), queueCourses.get(i).id()).getFirst(); s.generateKnowledgeMap(staffA.id(), queueCourses.get(i).id(), m.id()); }
     try { check(providerStarted.await(2, TimeUnit.SECONDS), "queue test gateway call started"); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new AssertionError(e); }
-    expect(429, () -> s.generateKnowledgeMap(staffA.id(), queueCourses.get(4).id()), "fifth Knowledge Map job is locally rate limited");
+    Material fifth=s.listMaterials(staffA.id(), queueCourses.get(4).id()).getFirst(); check(s.generateKnowledgeMap(staffA.id(), queueCourses.get(4).id(), fifth.id()).status() == KnowledgeMapJobStatus.queued, "fifth job remains visible as queued under concurrency pressure");
     releaseProvider.countDown();
   }
   private void waitFor(UUID materialId, MaterialStatus expected) { long deadline = System.nanoTime() + 2_000_000_000L; while (System.nanoTime() < deadline) { Material actual = s.listMaterials(staffA.id(), first.id()).stream().filter(m -> m.id().equals(materialId)).findFirst().orElseThrow(); if (actual.status() == expected) return; try { Thread.sleep(10); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new AssertionError(e); } } throw new AssertionError("material did not reach " + expected); }
   private void waitFor(UUID courseId, UUID materialId, MaterialStatus expected) { long deadline = System.nanoTime() + 2_000_000_000L; while (System.nanoTime() < deadline) { Material actual = s.listMaterials(staffA.id(), courseId).stream().filter(m -> m.id().equals(materialId)).findFirst().orElseThrow(); if (actual.status() == expected) return; try { Thread.sleep(10); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new AssertionError(e); } } throw new AssertionError("material did not reach " + expected); }
-  private void waitForMap(KnowledgeMapStatus expected) { long deadline = System.nanoTime() + 2_000_000_000L; while (System.nanoTime() < deadline) { KnowledgeMap actual = s.getKnowledgeMap(staffA.id(), first.id()); if (actual.status() == expected) return; try { Thread.sleep(10); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new AssertionError(e); } } throw new AssertionError("Knowledge Map did not reach " + expected); }
-  private static byte[] pdf(boolean text) { return classicPdf(new String[] {"<</Type /Catalog /Pages 2 0 R>>", "<</Type /Pages /Kids [3 0 R] /Count 1>>", "<</Type /Page /Parent 2 0 R>>", "<< /Length 0 >>\nstream\n" + (text ? "BT (Hello) Tj ET" : "") + "\nendstream"}); }
-  private static byte[] twoPagePdf() { return classicPdf(new String[] {"<</Type /Catalog /Pages 2 0 R>>", "<</Type /Pages /Kids [3 0 R 4 0 R] /Count 2>>", "<</Type /Page /Parent 2 0 R /Contents 5 0 R>>", "<</Type /Page /Parent 2 0 R /Contents 6 0 R>>", "<< /Length 0 >>\nstream\nBT (Hello) Tj ET\nendstream", "<< /Length 0 >>\nstream\nBT (Second page) Tj ET\nendstream"}); }
+  @SuppressWarnings("unchecked") private KnowledgeMap candidate(UUID materialId) { return (KnowledgeMap) s.listKnowledgeMaps(staffA.id(), first.id()).stream().filter(row -> ((Material)row.get("material")).id().equals(materialId)).findFirst().orElseThrow().get("candidate"); }
+  @SuppressWarnings("unchecked") private KnowledgeMap approved(UUID materialId) { return (KnowledgeMap) s.listKnowledgeMaps(staffA.id(), first.id()).stream().filter(row -> ((Material)row.get("material")).id().equals(materialId)).findFirst().orElseThrow().get("approved"); }
+  private void waitForMap(UUID materialId, KnowledgeMapJobStatus expected) { long deadline = System.nanoTime() + 2_000_000_000L; while (System.nanoTime() < deadline) { Object job=s.listKnowledgeMaps(staffA.id(), first.id()).stream().filter(row -> ((Material)row.get("material")).id().equals(materialId)).findFirst().orElseThrow().get("job"); if (job instanceof KnowledgeMapJob actual && actual.status() == expected) return; try { Thread.sleep(10); } catch (InterruptedException e) { Thread.currentThread().interrupt(); throw new AssertionError(e); } } throw new AssertionError("Knowledge Map job did not reach " + expected); }
+  private static byte[] pdf(boolean text) { return generatedPdf(text ? "Hello" : ""); }
+  private static byte[] twoPagePdf() { return generatedPdf("Hello", "Second page"); }
+  private static byte[] generatedPdf(String... pages) { try (PDDocument document = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) { for (String text : pages) { PDPage page = new PDPage(); document.addPage(page); if (!text.isEmpty()) try (PDPageContentStream stream = new PDPageContentStream(document, page)) { stream.beginText(); stream.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12); stream.newLineAtOffset(72, 720); stream.showText(text); stream.endText(); } } document.save(output); return output.toByteArray(); } catch (Exception e) { throw new AssertionError(e); } }
   private static byte[] danglingPagesPdf() { return classicPdf(new String[] {"<</Type /Catalog /Pages 99 0 R>>", "<</Type /Page /Parent 99 0 R>>"}); }
-  private static byte[] xrefStreamPdf(boolean flate, boolean corruptRootOffset) { String[] bodies = {"<</Type /Catalog /Pages 2 0 R>>", "<</Type /Pages /Kids [3 0 R] /Count 1>>", "<</Type /Page /Parent 2 0 R>>", "<< /Length 0 >>\nstream\nBT (Hello) Tj ET\nendstream"}; StringBuilder prefix = new StringBuilder("%PDF-1.5\n"); int[] offsets = new int[6]; for (int i=0;i<bodies.length;i++){offsets[i+1]=prefix.length();prefix.append(i+1).append(" 0 obj\n").append(bodies[i]).append("\nendobj\n");} offsets[5]=prefix.length(); byte[] table=new byte[6*7]; for(int i=1;i<6;i++){int offset=offsets[i]+(corruptRootOffset&&i==1?1:0);int at=i*7;table[at]=1;table[at+1]=(byte)(offset>>>24);table[at+2]=(byte)(offset>>>16);table[at+3]=(byte)(offset>>>8);table[at+4]=(byte)offset;} byte[] data=flate?deflate(table):table; prefix.append("5 0 obj\n<</Type /XRef /Size 6 /Root 1 0 R /W [1 4 2] /Length ").append(data.length).append(flate?" /Filter /FlateDecode>>\nstream\n":" >>\nstream\n").append(new String(data,StandardCharsets.ISO_8859_1)).append("\nendstream\nendobj\nstartxref\n").append(offsets[5]).append("\n%%EOF\n");return prefix.toString().getBytes(StandardCharsets.ISO_8859_1); }
+  private static byte[] xrefStreamPdf(boolean flate, boolean corruptRootOffset) { return xrefStreamPdf(flate, corruptRootOffset, false); }
+  private static byte[] xrefStreamPdf(boolean flate, boolean corruptRootOffset, boolean omitXrefSelf) { String[] bodies = {"<</Type /Catalog /Pages 2 0 R>>", "<</Type /Pages /Kids [3 0 R] /Count 1>>", "<</Type /Page /Parent 2 0 R>>", "<< /Length 0 >>\nstream\nBT (Hello) Tj ET\nendstream"}; StringBuilder prefix = new StringBuilder("%PDF-1.5\n"); int[] offsets = new int[6]; for (int i=0;i<bodies.length;i++){offsets[i+1]=prefix.length();prefix.append(i+1).append(" 0 obj\n").append(bodies[i]).append("\nendobj\n");} offsets[5]=prefix.length(); byte[] table=new byte[6*7]; for(int i=1;i<6;i++){int offset=offsets[i]+(corruptRootOffset&&i==1?1:0);int at=i*7;if (omitXrefSelf && i==5) continue;table[at]=1;table[at+1]=(byte)(offset>>>24);table[at+2]=(byte)(offset>>>16);table[at+3]=(byte)(offset>>>8);table[at+4]=(byte)offset;} byte[] data=flate?deflate(table):table; prefix.append("5 0 obj\n<</Type /XRef /Size 6 /Root 1 0 R /W [1 4 2] /Length ").append(data.length).append(flate?" /Filter /FlateDecode>>\nstream\n":" >>\nstream\n").append(new String(data,StandardCharsets.ISO_8859_1)).append("\nendstream\nendobj\nstartxref\n").append(offsets[5]).append("\n%%EOF\n");return prefix.toString().getBytes(StandardCharsets.ISO_8859_1); }
+  private static byte[] hybridXrefPdf() { String direct = new String(xrefStreamPdf(true, false, true), StandardCharsets.ISO_8859_1); int marker = direct.lastIndexOf("startxref\n") + "startxref\n".length(); int streamOffset = Integer.parseInt(direct.substring(marker, direct.indexOf('\n', marker))); String prefix = direct.substring(0, direct.lastIndexOf("startxref\n")); int xrefOffset = prefix.length(); return (prefix + "xref\n0 0\ntrailer\n<</Size 6 /Root 1 0 R /XRefStm " + streamOffset + ">>\nstartxref\n" + xrefOffset + "\n%%EOF\n").getBytes(StandardCharsets.ISO_8859_1); }
   private static byte[] deflate(byte[] value) { try { ByteArrayOutputStream out=new ByteArrayOutputStream(); try(DeflaterOutputStream zip=new DeflaterOutputStream(out)){zip.write(value);} return out.toByteArray(); } catch(Exception e){throw new AssertionError(e);} }
   private static byte[] pdfWithoutXref() { return "%PDF-1.4\n1 0 obj\n<</Type /Catalog /Pages 2 0 R>>\nendobj\n2 0 obj\n<</Type /Pages /Kids [3 0 R] /Count 1>>\nendobj\n3 0 obj\n<</Type /Page /Parent 2 0 R>>\nendobj\ntrailer\n<</Root 1 0 R>>\n%%EOF\n".getBytes(StandardCharsets.ISO_8859_1); }
-  private static byte[] classicPdf(String[] bodies) { StringBuilder pdf = new StringBuilder("%PDF-1.4\n"); int[] offsets = new int[bodies.length + 1]; for (int i = 0; i < bodies.length; i++) { offsets[i + 1] = pdf.length(); pdf.append(i + 1).append(" 0 obj\n").append(bodies[i]).append("\nendobj\n"); } int xref = pdf.length(); pdf.append("xref\n0 ").append(bodies.length + 1).append("\n0000000000 65535 f \n"); for (int i = 1; i <= bodies.length; i++) pdf.append(String.format("%010d 00000 n \n", offsets[i])); pdf.append("trailer\n<</Size ").append(bodies.length + 1).append(" /Root 1 0 R>>\nstartxref\n").append(xref).append("\n%%EOF\n"); return pdf.toString().getBytes(StandardCharsets.ISO_8859_1); }
+  private static byte[] classicPdf(String[] bodies) { StringBuilder pdf = new StringBuilder("%PDF-1.4\n"); int[] offsets = new int[bodies.length + 1]; for (int i = 0; i < bodies.length; i++) { String body = withStreamLength(bodies[i]); offsets[i + 1] = pdf.length(); pdf.append(i + 1).append(" 0 obj\n").append(body).append("\nendobj\n"); } int xref = pdf.length(); pdf.append("xref\n0 ").append(bodies.length + 1).append("\n0000000000 65535 f \n"); for (int i = 1; i <= bodies.length; i++) pdf.append(String.format("%010d 00000 n \n", offsets[i])); pdf.append("trailer\n<</Size ").append(bodies.length + 1).append(" /Root 1 0 R>>\nstartxref\n").append(xref).append("\n%%EOF\n"); return pdf.toString().getBytes(StandardCharsets.ISO_8859_1); }
+  private static String withStreamLength(String body) { int start = body.indexOf("stream\n"); int end = body.indexOf("\nendstream", start); if (start < 0 || end < 0) return body; int length = body.substring(start + 7, end).getBytes(StandardCharsets.ISO_8859_1).length; return body.replace("/Length 0", "/Length " + length); }
   private static void expect(int status, Runnable action, String name) { try { action.run(); throw new AssertionError(name+": request unexpectedly succeeded"); } catch(ApiException e) { if(e.status!=status) throw new AssertionError(name+": expected "+status+", got "+e.status); } }
   private static void check(boolean ok,String name){if(!ok)throw new AssertionError(name);}
 }
