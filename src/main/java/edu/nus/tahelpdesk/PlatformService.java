@@ -21,6 +21,7 @@ public class PlatformService {
   private final Map<String, UUID> courseByCode = new ConcurrentHashMap<>();
   private final Map<UUID, Map<UUID, Membership>> memberships = new ConcurrentHashMap<>();
   private final Map<UUID, Post> posts = new ConcurrentHashMap<>();
+  private final Map<UUID, ForumTag> forumTags = new ConcurrentHashMap<>();
   private final Map<UUID, Comment> comments = new ConcurrentHashMap<>();
   private final Map<UUID, Material> materials = new ConcurrentHashMap<>();
   private final Map<UUID, List<PdfPage>> materialPages = new ConcurrentHashMap<>();
@@ -49,10 +50,11 @@ public class PlatformService {
   PlatformService(Runnable afterMutation) { this.afterMutation = afterMutation; }
   synchronized boolean isEmpty() { return users.isEmpty(); }
   synchronized void restore(Collection<User> loadedUsers, Collection<Course> loadedCourses,
-      Collection<Membership> loadedMemberships, Collection<Post> loadedPosts, Collection<Comment> loadedComments, Collection<Material> loadedMaterials, Collection<PdfPage> loadedPages, Collection<KnowledgeMap> loadedCandidates, Collection<KnowledgeMap> loadedApproved, Collection<KnowledgeMapJob> loadedJobs) {
+      Collection<Membership> loadedMemberships, Collection<ForumTag> loadedTags, Collection<Post> loadedPosts, Collection<Comment> loadedComments, Collection<Material> loadedMaterials, Collection<PdfPage> loadedPages, Collection<KnowledgeMap> loadedCandidates, Collection<KnowledgeMap> loadedApproved, Collection<KnowledgeMapJob> loadedJobs) {
     for (User user : loadedUsers) { users.put(user.id(), user); userByName.put(normalize(user.username()), user.id()); }
     for (Course course : loadedCourses) { courses.put(course.id(), course); courseByCode.put(course.code(), course.id()); memberships.put(course.id(), new ConcurrentHashMap<>()); }
     for (Membership membership : loadedMemberships) memberships.computeIfAbsent(membership.courseId(), ignored -> new ConcurrentHashMap<>()).put(membership.userId(), membership);
+    for (ForumTag tag : loadedTags) forumTags.put(tag.id(), tag);
     for (Post post : loadedPosts) posts.put(post.id(), post);
     for (Comment comment : loadedComments) comments.put(comment.id(), comment);
     for (Material material : loadedMaterials) materials.put(material.id(), copyMaterial(material));
@@ -61,8 +63,8 @@ public class PlatformService {
     for (KnowledgeMap map : loadedApproved) approvedMaps.put(map.materialId(), copyKnowledgeMap(map));
     for (KnowledgeMapJob job : loadedJobs) knowledgeMapJobs.put(job.materialId(), copyKnowledgeMapJob(job));
   }
-  synchronized Snapshot snapshot() { return new Snapshot(List.copyOf(users.values()), List.copyOf(courses.values()), memberships.values().stream().flatMap(m -> m.values().stream()).toList(), List.copyOf(posts.values()), List.copyOf(comments.values()), materials.values().stream().map(PlatformService::copyMaterial).toList(), materialPages.values().stream().flatMap(Collection::stream).toList(), candidates.values().stream().map(PlatformService::copyKnowledgeMap).toList(), approvedMaps.values().stream().map(PlatformService::copyKnowledgeMap).toList(), knowledgeMapJobs.values().stream().map(PlatformService::copyKnowledgeMapJob).toList()); }
-  record Snapshot(List<User> users, List<Course> courses, List<Membership> memberships, List<Post> posts, List<Comment> comments, List<Material> materials, List<PdfPage> pdfPages, List<KnowledgeMap> candidates, List<KnowledgeMap> approvedMaps, List<KnowledgeMapJob> knowledgeMapJobs) {}
+  synchronized Snapshot snapshot() { return new Snapshot(List.copyOf(users.values()), List.copyOf(courses.values()), memberships.values().stream().flatMap(m -> m.values().stream()).toList(), List.copyOf(forumTags.values()), List.copyOf(posts.values()), List.copyOf(comments.values()), materials.values().stream().map(PlatformService::copyMaterial).toList(), materialPages.values().stream().flatMap(Collection::stream).toList(), candidates.values().stream().map(PlatformService::copyKnowledgeMap).toList(), approvedMaps.values().stream().map(PlatformService::copyKnowledgeMap).toList(), knowledgeMapJobs.values().stream().map(PlatformService::copyKnowledgeMapJob).toList()); }
+  record Snapshot(List<User> users, List<Course> courses, List<Membership> memberships, List<ForumTag> tags, List<Post> posts, List<Comment> comments, List<Material> materials, List<PdfPage> pdfPages, List<KnowledgeMap> candidates, List<KnowledgeMap> approvedMaps, List<KnowledgeMapJob> knowledgeMapJobs) {}
   private void changed() { afterMutation.run(); }
 
   /** The gateway client is installed only by the application bootstrap, never by a browser request. */
@@ -92,6 +94,7 @@ public class PlatformService {
     courses.put(course.id(), course); courseByCode.put(normalized, course.id());
     memberships.put(course.id(), new ConcurrentHashMap<>());
     memberships.get(course.id()).put(actor, new Membership(course.id(), actor, Role.staff));
+    createGeneralTag(course.id());
     changed(); return course;
   }
   public synchronized Course renameCourse(UUID actor, UUID courseId, String name) {
@@ -101,6 +104,7 @@ public class PlatformService {
   public synchronized void deleteCourse(UUID actor, UUID courseId) {
     Course course = requireCourseStaff(actor, courseId);
     posts.values().removeIf(p -> p.courseId().equals(courseId));
+    forumTags.values().removeIf(tag -> tag.courseId().equals(courseId));
     comments.values().removeIf(c -> !posts.containsKey(c.postId()));
     materials.entrySet().removeIf(entry -> entry.getValue().courseId().equals(courseId));
     materialPages.entrySet().removeIf(entry -> entry.getValue().stream().anyMatch(page -> page.courseId().equals(courseId)));
@@ -199,15 +203,36 @@ public class PlatformService {
     memberships.get(courseId).remove(userId); changed();
   }
   public List<Membership> listMembers(UUID actor, UUID courseId) { requireCourseStaff(actor, courseId); return List.copyOf(memberships.get(courseId).values()); }
-  public synchronized Post createPost(UUID actor, UUID courseId, String title, String description) {
-    requireCourseMember(actor, courseId); validatePost(title, description); Instant now = Instant.now();
-    Post post = new Post(UUID.randomUUID(), courseId, actor, title.trim(), nullable(description), now, now); posts.put(post.id(), post); changed(); return post;
+  public synchronized List<ForumTag> listForumTags(UUID actor, UUID courseId) { requireCourseMember(actor, courseId); return courseTags(courseId); }
+  public synchronized ForumTag createForumTag(UUID actor, UUID courseId, String name, String color) {
+    requireCourseStaff(actor, courseId); String safeName = validateTagName(name); validateTagColor(color);
+    List<ForumTag> tags = courseTags(courseId); if (tags.size() >= 7) throw ApiException.validation("A course can have at most 7 tags, including General (up to 6 custom tags).");
+    if (tags.stream().anyMatch(tag -> normalizedTagName(tag.name()).equals(normalizedTagName(safeName)))) throw ApiException.conflict("A tag with that name already exists in this course.");
+    ForumTag tag = new ForumTag(UUID.randomUUID(), courseId, safeName, color, false, Instant.now()); forumTags.put(tag.id(), tag); try { changed(); } catch (RuntimeException failure) { forumTags.remove(tag.id()); throw failure; } return tag;
   }
-  public List<Post> listPosts(UUID actor, UUID courseId) { requireCourseMember(actor, courseId); return posts.values().stream().filter(p -> p.courseId().equals(courseId)).sorted(Comparator.comparing(Post::createdAt).reversed()).toList(); }
+  public synchronized ForumTag editForumTag(UUID actor, UUID courseId, UUID tagId, String name, String color) {
+    requireCourseStaff(actor, courseId); ForumTag old = requireTagInCourse(courseId, tagId); if (old.isDefault()) throw ApiException.validation("The General tag cannot be changed.");
+    String safeName = validateTagName(name); validateTagColor(color);
+    if (courseTags(courseId).stream().anyMatch(tag -> !tag.id().equals(tagId) && normalizedTagName(tag.name()).equals(normalizedTagName(safeName)))) throw ApiException.conflict("A tag with that name already exists in this course.");
+    ForumTag tag = new ForumTag(old.id(), courseId, safeName, color, false, old.createdAt()); forumTags.put(tag.id(), tag); try { changed(); } catch (RuntimeException failure) { forumTags.put(old.id(), old); throw failure; } return tag;
+  }
+  public synchronized void deleteForumTag(UUID actor, UUID courseId, UUID tagId) {
+    requireCourseStaff(actor, courseId); ForumTag tag = requireTagInCourse(courseId, tagId); if (tag.isDefault()) throw ApiException.validation("The General tag cannot be deleted.");
+    ForumTag general = courseTags(courseId).stream().filter(ForumTag::isDefault).findFirst().orElseThrow();
+    Map<UUID,Post> moved = new HashMap<>();
+    posts.replaceAll((id, post) -> { if(post.courseId().equals(courseId)&&post.tagId().equals(tagId)){moved.put(id,post);return new Post(post.id(),post.courseId(),post.authorId(),post.title(),post.description(),general.id(),post.createdAt(),post.updatedAt());}return post; });
+    forumTags.remove(tagId); try { changed(); } catch (RuntimeException failure) { forumTags.put(tag.id(),tag); posts.putAll(moved); throw failure; }
+  }
+  public synchronized Post createPost(UUID actor, UUID courseId, String title, String description, UUID tagId) {
+    requireCourseMember(actor, courseId); validatePost(title, description); ForumTag tag = requireTagInCourse(courseId, tagId); Instant now = Instant.now();
+    Post post = new Post(UUID.randomUUID(), courseId, actor, title.trim(), nullable(description), tag.id(), now, now); posts.put(post.id(), post); changed(); return post;
+  }
+  public List<Post> listPosts(UUID actor, UUID courseId) { return listPosts(actor, courseId, null); }
+  public List<Post> listPosts(UUID actor, UUID courseId, UUID tagId) { requireCourseMember(actor, courseId); if(tagId!=null) requireTagInCourse(courseId,tagId); return posts.values().stream().filter(p -> p.courseId().equals(courseId) && (tagId==null || p.tagId().equals(tagId))).sorted(Comparator.comparing(Post::createdAt).reversed()).toList(); }
   public Post getPost(UUID actor, UUID courseId, UUID postId) { requireCourseMember(actor, courseId); return requirePostInCourse(courseId, postId); }
-  public synchronized Post editPost(UUID actor, UUID courseId, UUID postId, String title, String description) {
-    requireCourseMember(actor, courseId); Post old = requirePostInCourse(courseId, postId); requireAuthor(actor, old.authorId()); validatePost(title, description);
-    Post updated = new Post(old.id(), old.courseId(), old.authorId(), title.trim(), nullable(description), old.createdAt(), Instant.now()); posts.put(postId, updated); changed(); return updated;
+  public synchronized Post editPost(UUID actor, UUID courseId, UUID postId, String title, String description, UUID tagId) {
+    requireCourseMember(actor, courseId); Post old = requirePostInCourse(courseId, postId); requireAuthor(actor, old.authorId()); validatePost(title, description); ForumTag tag = requireTagInCourse(courseId, tagId);
+    Post updated = new Post(old.id(), old.courseId(), old.authorId(), title.trim(), nullable(description), tag.id(), old.createdAt(), Instant.now()); posts.put(postId, updated); changed(); return updated;
   }
   public synchronized void deletePost(UUID actor, UUID courseId, UUID postId) {
     requireCourseMember(actor, courseId); Post post = requirePostInCourse(courseId, postId); requireDeletion(actor, courseId, post.authorId());
@@ -225,6 +250,26 @@ public class PlatformService {
   public synchronized void deleteComment(UUID actor, UUID courseId, UUID postId, UUID commentId) {
     requireCourseMember(actor, courseId); requirePostInCourse(courseId, postId); Comment comment = requireCommentForPost(postId, commentId); requireDeletion(actor, courseId, comment.authorId()); comments.remove(commentId); changed();
   }
+  public ForumTag forumTag(UUID id) { ForumTag tag=forumTags.get(id); if(tag==null) throw ApiException.hidden(); return tag; }
+  private List<ForumTag> courseTags(UUID courseId) { return forumTags.values().stream().filter(t->t.courseId().equals(courseId)).sorted(Comparator.comparing(ForumTag::isDefault).reversed().thenComparing(ForumTag::createdAt)).toList(); }
+  private ForumTag createGeneralTag(UUID courseId) { return forumTags.values().stream().filter(t->t.courseId().equals(courseId)&&t.isDefault()).findFirst().orElseGet(()->{ForumTag t=new ForumTag(UUID.randomUUID(),courseId,"General","#475569",true,Instant.now());forumTags.put(t.id(),t);return t;}); }
+  private ForumTag requireTagInCourse(UUID courseId, UUID tagId) { ForumTag tag=tagId==null?null:forumTags.get(tagId); if(tag==null||!tag.courseId().equals(courseId)) throw ApiException.validation("Choose a current tag for this course."); return tag; }
+  static String normalizedTagName(String value) { return java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFC).toUpperCase(Locale.ROOT).toLowerCase(Locale.ROOT); }
+  private static String validateTagName(String value) {
+    String name=value==null?"":trimUnicodeWhitespace(value); int length=name.codePointCount(0,name.length());
+    if(length<1||length>20) throw ApiException.validation("Tag name is required and must be at most 20 characters.");
+    if(name.contains("<")||name.contains(">")||name.codePoints().anyMatch(cp->Character.isISOControl(cp)||isEmoji(cp))) throw ApiException.validation("Tag names cannot contain emoji, control characters, or markup.");
+    return name;
+  }
+  private static String trimUnicodeWhitespace(String value) {
+    int start=0,end=value.length();
+    while(start<end){int cp=value.codePointAt(start);if(!isUnicodeWhitespace(cp))break;start+=Character.charCount(cp);}
+    while(end>start){int cp=value.codePointBefore(end);if(!isUnicodeWhitespace(cp))break;end-=Character.charCount(cp);}
+    return value.substring(start,end);
+  }
+  private static boolean isUnicodeWhitespace(int cp) { return Character.isWhitespace(cp)||Character.isSpaceChar(cp)||cp==0x0085||cp==0xFEFF; }
+  private static boolean isEmoji(int cp) { return (cp>=0x1F000&&cp<=0x1FAFF)||(cp>=0x2600&&cp<=0x27BF)||(cp>=0xFE00&&cp<=0xFE0F)||(cp>=0x1F1E6&&cp<=0x1F1FF); }
+  private static void validateTagColor(String color) { if(color==null||!Set.of("#1D4ED8","#166534","#854D0E","#B91C1C","#6D28D9","#0F766E").contains(color)) throw ApiException.validation("Choose a color from the available palette."); }
   public User author(UUID id) { return requireUser(id); }
   public Role membershipRole(UUID courseId, UUID userId) { Membership value = membership(courseId, userId); return value == null ? null : value.role(); }
   private void requireDeletion(UUID actor, UUID courseId, UUID authorId) {
