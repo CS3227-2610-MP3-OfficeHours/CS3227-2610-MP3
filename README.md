@@ -49,6 +49,17 @@ npm run dev
 The client intentionally contains only the shared React/TypeScript entry
 point; feature owners add approved student/staff views.
 
+To serve the built client from the Java server on a single origin, exactly as
+production does, build the client once and point the server at it:
+
+```sh
+cd src/frontend && npm ci && npm run build && cd ../..
+TA_HELP_DESK_STATIC_DIR=src/frontend/dist sh scripts/run-local.sh
+```
+
+With `TA_HELP_DESK_STATIC_DIR` unset the server serves the API only, which is
+the right mode when using the Vite dev server and its `/api` proxy.
+
 Copy `.env.example` to `.env` only when changing local settings. Never commit a
 real session or application secret. Both Java launch scripts load this local
 file into their process environment when it exists. Staff Knowledge Map

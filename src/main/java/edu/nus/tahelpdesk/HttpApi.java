@@ -10,9 +10,10 @@ import java.util.stream.Collectors;
 import static edu.nus.tahelpdesk.Domain.*;
 
 public final class HttpApi implements HttpHandler {
-  private final PlatformService service; private final SessionManager sessions; private final boolean secureCookies;
-  public HttpApi(PlatformService service) { this(service, false); }
-  public HttpApi(PlatformService service, boolean secureCookies) { this.service = service; this.sessions = new SessionManager(); this.secureCookies = secureCookies; }
+  private final PlatformService service; private final SessionManager sessions; private final boolean secureCookies; private final StaticSite site;
+  public HttpApi(PlatformService service) { this(service, false, null); }
+  public HttpApi(PlatformService service, boolean secureCookies) { this(service, secureCookies, null); }
+  public HttpApi(PlatformService service, boolean secureCookies, StaticSite site) { this.service = service; this.sessions = new SessionManager(); this.secureCookies = secureCookies; this.site = site; }
   @Override public void handle(HttpExchange exchange) throws IOException {
     try { dispatch(exchange); } catch (ApiException e) { respond(exchange, e.status, Map.of("error", Map.of("code", e.code, "message", e.getMessage()))); }
       catch (IllegalArgumentException e) { respond(exchange, 404, Map.of("error", Map.of("code", "not_found", "message", "The requested resource is unavailable."))); }
@@ -24,6 +25,10 @@ public final class HttpApi implements HttpHandler {
     if ("POST".equals(method) && "/api/auth/signup".equals(path)) { Map<String,Object>b=body(x); User u=service.signup(Json.string(b,"username"),Json.string(b,"password"),Json.string(b,"role")); signedIn(x,u,201); return; }
     if ("POST".equals(method) && "/api/auth/signin".equals(path)) { Map<String,Object>b=body(x); signedIn(x,service.authenticate(Json.string(b,"username"),Json.string(b,"password")),200); return; }
     if ("POST".equals(method) && "/api/auth/signout".equals(path)) { sessions.revoke(token(x)); respond(x,204,null); return; }
+    // The client build is public and must be reachable before sign-in; the API
+    // below stays behind the session check.
+    boolean apiPath = "/api".equals(path) || path.startsWith("/api/");
+    if (!apiPath && site != null && site.serve(x, method, path)) return;
     UUID actor = sessions.require(token(x));
     if ("GET".equals(method) && "/api/me".equals(path)) { respond(x,200, Map.of("user", user(service.current(actor)))); return; }
     if ("GET".equals(method) && "/api/courses".equals(path)) { respond(x,200, Map.of("courses", service.listCourses(actor).stream().map(this::course).toList())); return; }

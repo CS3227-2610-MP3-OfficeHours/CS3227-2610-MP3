@@ -8,3 +8,4 @@ javac --release 25 --add-modules jdk.httpserver -cp "$PDFBOX_JAR" -d build/class
 javac --release 25 --add-modules jdk.httpserver -cp "build/classes:$PDFBOX_JAR" -d build/test-classes $(find src/test/java -name '*.java')
 java --add-modules jdk.httpserver -cp "build/classes:build/test-classes:$PDFBOX_JAR" edu.nus.tahelpdesk.PlatformIntegrationTest
 java --add-modules jdk.httpserver -cp "build/classes:build/test-classes:$PDFBOX_JAR" edu.nus.tahelpdesk.SoCLaaSClientTest
+java --add-modules jdk.httpserver -cp "build/classes:build/test-classes:$PDFBOX_JAR" edu.nus.tahelpdesk.StaticSiteTest

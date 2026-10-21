@@ -1,7 +1,7 @@
 package edu.nus.tahelpdesk;
 
 /** Environment-only configuration; secrets are deliberately never logged. */
-public record AppConfig(int port, boolean production, String databaseUrl, String databaseUser, String databasePassword) {
+public record AppConfig(int port, boolean production, String databaseUrl, String databaseUser, String databasePassword, String staticDirectory) {
   public static AppConfig load() {
     String environment = System.getenv().getOrDefault("TA_HELP_DESK_ENV", "development");
     boolean production = "production".equals(environment);
@@ -25,7 +25,9 @@ public record AppConfig(int port, boolean production, String databaseUrl, String
     } else if (databaseUser != null || databasePassword != null || production) {
       throw new IllegalArgumentException("TA_HELP_DESK_DATABASE_URL is required in production and whenever database credentials are supplied.");
     }
-    return new AppConfig(port, production, databaseUrl, databaseUser, databasePassword);
+    // Optional: the directory holding the built client. Absent means API only.
+    String staticDirectory = trimToNull(System.getenv("TA_HELP_DESK_STATIC_DIR"));
+    return new AppConfig(port, production, databaseUrl, databaseUser, databasePassword, staticDirectory);
   }
   public boolean usesPostgres() { return databaseUrl != null; }
   private static String trimToNull(String value) { return value == null || value.isBlank() ? null : value.trim(); }

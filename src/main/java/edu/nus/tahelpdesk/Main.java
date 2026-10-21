@@ -14,7 +14,8 @@ public final class Main {
     if (config.usesPostgres()) SeedData.seedIfEmpty(platform);
     SoCLaaSClient staffLlm = SoCLaaSClient.staffFromEnvironment();
     if (staffLlm != null) platform.setKnowledgeMapGenerator(staffLlm::generateKnowledgeMap, staffLlm.fallbackConfigured());
-    server.createContext("/", new HttpApi(platform, config.production())); server.setExecutor(Executors.newVirtualThreadPerTaskExecutor()); server.start();
-    System.out.println("TA Help Desk listening on http://localhost:" + port);
+    StaticSite site = StaticSite.openOrNull(config.staticDirectory());
+    server.createContext("/", new HttpApi(platform, config.production(), site)); server.setExecutor(Executors.newVirtualThreadPerTaskExecutor()); server.start();
+    System.out.println("TA Help Desk listening on port " + port + (site == null ? " (API only)" : " (API and client)"));
   }
 }
