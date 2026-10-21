@@ -296,7 +296,7 @@ public class PlatformService {
       if (!sourceCurrent(current)) { knowledgeMapJobs.put(materialId, cancelledJob(current)); changed(); return; }
       Instant now = Instant.now();
       if (result.succeeded()) {
-        Material source = materials.get(materialId); String verification = hasValidCitation(result.text(), source) ? null : "Unverified: missing valid support from " + source.filename() + ". This returned map is staff-only and cannot be approved for student AI navigation.";
+        Material source = materials.get(materialId); String verification = citationVerificationMessage(result.text(), source);
         KnowledgeMap candidate = new KnowledgeMap(UUID.randomUUID(), courseId, materialId, digest, current.requestedBy(), KnowledgeMapStatus.pending_review, result.text(), verification, null, null, now, now);
         candidates.put(materialId, candidate); knowledgeMapJobs.put(materialId, new KnowledgeMapJob(current.id(), courseId, materialId, digest, current.requestedBy(), KnowledgeMapJobStatus.completed, null, candidate.id(), current.createdAt(), now));
       } else {
@@ -308,17 +308,28 @@ public class PlatformService {
   private boolean sourceCurrent(KnowledgeMapJob job) { Material material = materials.get(job.materialId()); return material != null && material.courseId().equals(job.courseId()) && material.status() == MaterialStatus.active && PdfPageExtractor.digest(material.content()).equals(job.materialDigest()); }
   private static KnowledgeMapJob failedJob(KnowledgeMapJob current, String failure) { return new KnowledgeMapJob(current.id(), current.courseId(), current.materialId(), current.materialDigest(), current.requestedBy(), KnowledgeMapJobStatus.failed, failure, null, current.createdAt(), Instant.now()); }
   private static KnowledgeMapJob cancelledJob(KnowledgeMapJob current) { return new KnowledgeMapJob(current.id(), current.courseId(), current.materialId(), current.materialDigest(), current.requestedBy(), KnowledgeMapJobStatus.cancelled_due_to_source_change, "This PDF changed or was removed before generation completed.", null, current.createdAt(), Instant.now()); }
-  private boolean hasValidCitation(String content, Material source) {
-    if (content == null || content.isBlank() || source == null) return false;
+  private String citationVerificationMessage(String content, Material source) {
+    if (content == null || content.isBlank() || source == null) return unverifiedFallback(source);
     Set<Integer> pages = materialPages.getOrDefault(source.id(), List.of()).stream().filter(page -> !page.text().isBlank() && page.invalidatedAt() == null).map(PdfPage::pageNumber).collect(java.util.stream.Collectors.toSet());
-    Pattern canonical = Pattern.compile("\\(" + Pattern.quote(source.filename()) + ", p\\. (\\d+)\\)", Pattern.CASE_INSENSITIVE);
-    Pattern anyPdf = Pattern.compile("[A-Za-z0-9_. -]+\\.pdf\\s*,?\\s*p(?:age)?\\.?\\s*\\d+", Pattern.CASE_INSENSITIVE);
-    for (String line : content.split("\\R")) { String trimmed=line.trim(); if (trimmed.isEmpty() || trimmed.startsWith("#")) continue;
-      Matcher cited=canonical.matcher(trimmed); int end=-1; while(cited.find()) { if(!pages.contains(Integer.parseInt(cited.group(1)))) return false; end=cited.end(); }
-      if(end < 0 || end != trimmed.length() || anyPdf.matcher(trimmed).find() && !trimmed.contains(source.filename())) return false;
+    Pattern canonical = Pattern.compile("\\(([^(),]+\\.pdf), p\\. (\\d+)\\)", Pattern.CASE_INSENSITIVE);
+    Pattern anyPdf = Pattern.compile("([^(),]+\\.pdf)\\s*,?\\s*p(?:age)?\\.?\\s*\\d+", Pattern.CASE_INSENSITIVE);
+    Set<String> reasons = new LinkedHashSet<>();
+    for (String line : content.split("\\R")) { String trimmed=line.trim(); if (trimmed.isEmpty()) continue;
+      Matcher cited=canonical.matcher(trimmed); int end=-1; int canonicalCount=0; boolean invalidPage=false; boolean wrongFilename=false;
+      while(cited.find()) { canonicalCount++; end=cited.end(); if (!cited.group(1).equalsIgnoreCase(source.filename())) { wrongFilename=true; continue; } try { if(!pages.contains(Integer.parseInt(cited.group(2)))) invalidPage=true; } catch (NumberFormatException e) { invalidPage=true; } }
+      Matcher any=anyPdf.matcher(trimmed); int citationCount=0;
+      while (any.find()) { citationCount++; if (!any.group(1).equalsIgnoreCase(source.filename())) wrongFilename=true; }
+      boolean anyCitation=citationCount > 0;
+      if (wrongFilename) reasons.add("The cited filename does not match an uploaded course PDF.");
+      if (canonicalCount > 0 && invalidPage) reasons.add("The cited page is outside the PDF or has no extracted text.");
+      if (canonicalCount > 0 && end != trimmed.length()) reasons.add("Put the citation at the end of its claim line, with no text or punctuation after it.");
+      if (anyCitation && canonicalCount < citationCount) reasons.add("A citation is not in the required format.");
+      if (!anyCitation) reasons.add(trimmed.startsWith("#") || trimmed.startsWith("*") ? "A citation is not in the required format." : "A claim is missing a source citation.");
     }
-    return true;
+    if (reasons.isEmpty()) return null;
+    return "Unverified: " + String.join(" ", reasons) + " This returned map is staff-only and cannot be approved for student AI navigation.";
   }
+  private static String unverifiedFallback(Material source) { return "Unverified: missing valid support from " + (source == null ? "the source PDF" : source.filename()) + ". This returned map is staff-only and cannot be approved for student AI navigation."; }
   private static String knowledgeMapFailure(SoCLaaSClient.Failure failure) {
     return switch (failure) {
       case configuration -> "The staff LLM service is not configured correctly. Check the server configuration.";
