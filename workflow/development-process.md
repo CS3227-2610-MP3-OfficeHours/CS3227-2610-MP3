@@ -17,6 +17,7 @@ files have these owners and purposes:
 | `design.md` | UI designer | user flow, layouts/components, interaction and state behavior, accessibility/responsive decisions, approvals |
 | `tasks.md` | Engineer | implementation checklist, technical decisions, changed areas, test commands/results, QA handoff |
 | `test-report.md` | Tester | scenarios, actual results, criteria coverage, defects/reproduction, limitations, final assessment |
+| `completion-review.md` | Acceptance auditor | artefact-only completion verdict, evidence gaps/blockers, and next owner |
 
 The product manager may omit `design.md` only for work with no user-facing
 change. A missing required artefact is a blocker, not an invitation to infer
@@ -43,10 +44,13 @@ Last handoff: <from → to, date, and one-line purpose>
    `tasks.md`.
 5. The tester independently produces `test-report.md` with `Pass` or `Needs
    changes`.
-6. The orchestrator routes defects to engineering and ambiguity to product/design,
-   then updates the affected artefact before re-verification.
-7. The orchestrator gives the human a completion summary: implementation,
-   verification evidence, unresolved limitations, and any follow-up decision.
+6. If testing reports `Needs changes`, the orchestrator routes named defects to
+   engineering and ambiguity to product/design, then obtains independent
+   re-verification after the affected artefact is updated.
+7. For substantial or security-sensitive work with a passing test report, the
+   acceptance auditor writes `completion-review.md` from feature artefacts only.
+8. The orchestrator gives the human a completion summary only when the test
+   report and, when required, completion review pass their completion gates.
 
 ## Handoff convention
 
@@ -76,6 +80,16 @@ scope, risk, or design.
   bug fixes directly.
 - Use tester for independent acceptance checks, especially after a substantial
   feature or security-sensitive change.
+- Use acceptance auditor after a passing tester report for substantial or
+  security-sensitive work. It reviews only the approved scope and recorded
+  artefact evidence; it does not inspect implementation or rerun tests.
+
+For a simple, low-risk fix that preserves user flows, authorization, data/API,
+AI/RAG, security, and deployment contracts, the orchestrator applies the
+completion checklist directly: scope is met, relevant passing test evidence is
+recorded, no blocker or required approval remains, and the final response does
+not overstate completion. A `Needs changes` report, blocking defect, missing
+test result, or missing acceptance-criteria coverage always blocks completion.
 
 Parallel work is appropriate only for independent analysis/review. Agents must
 not edit the same artefact or source area at the same time. The orchestrator

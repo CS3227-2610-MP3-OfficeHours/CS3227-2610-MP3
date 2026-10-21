@@ -21,3 +21,7 @@ config_file = "agents/engineer.toml"
 [agents.tester]
 description = "Independently verify a feature against its approved requirements and report reproducible results without fixing code."
 config_file = "agents/tester.toml"
+
+[agents.acceptance-auditor]
+description = "Review feature artefacts for completion evidence after testing; do not recheck implementation or execute tests."
+config_file = "agents/acceptance-auditor.toml"

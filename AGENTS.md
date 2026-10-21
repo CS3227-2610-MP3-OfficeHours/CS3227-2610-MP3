@@ -15,6 +15,8 @@ materially help the requested task:
   are clear.
 - `engineer`: implement approved work and tests.
 - `tester`: independently verify completed work and report evidence.
+- `acceptance-auditor`: review completion evidence in feature artefacts without
+  rechecking the implementation or running tests.
 
 Role declarations live in `.codex/config.toml`; their project-local role
 instructions are under `.codex/agents/`. Shared reusable procedures are native
@@ -30,6 +32,8 @@ Examples:
 - “Use the `ui-designer` agent to design the approved `student-ai-help` flow.”
 - “Use the `engineer` agent to implement approved feature `student-ai-help`.”
 - “Use the `tester` agent to independently verify `student-ai-help`.”
+- “Use the `acceptance-auditor` agent to audit completion evidence for
+  `student-ai-help`.”
 
 Include the expected artefact path and whether the work is read-only, review,
 or implementation when that is not obvious. The orchestrator should provide
@@ -46,8 +50,14 @@ For a substantial feature, use this ordered flow:
    choices before implementation.
 4. Engineer implements approved work, tests it, and writes `tasks.md`.
 5. Tester writes an independent `test-report.md`.
-6. The orchestrator returns defects to engineering, and ambiguous requirements to
-   product manager or UI designer, then summarizes completion for human review.
+6. The orchestrator returns tester defects to engineering and ambiguous
+   requirements to product manager or UI designer, then updates the affected
+   artefact before re-verification.
+7. After a passing test report for substantial or security-sensitive work, the
+   acceptance auditor reviews the feature artefacts and writes
+   `completion-review.md`.
+8. The orchestrator summarizes completion for human review only when the
+   applicable completion gate passes.
 
 A feature is substantial when it changes a user flow, role/course authorization,
 stored data or API contract, AI/RAG behavior, security boundary, or deployment
@@ -55,6 +65,30 @@ behavior. Simple, low-risk fixes that preserve those contracts may skip
 product/design work. Do not start dependent work before its prerequisite
 artefact is approved. Parallelize only independent work and never assign
 simultaneous edits to the same files.
+
+## Orchestrator completion gate
+
+The orchestrator must not report a task or feature as complete while the latest
+`test-report.md` is `Needs changes`, has a blocking defect, lacks actual results
+for relevant tests, or lacks coverage for applicable acceptance criteria. It
+must return named defects to engineering, then obtain independent
+re-verification before continuing.
+
+For substantial or security-sensitive work, invoke `acceptance-auditor` only
+after the tester reports `Pass`. The audit is required before a completion
+summary; a verdict other than `Ready for human review` blocks completion. The
+auditor reviews artefacts only and does not replace testing.
+
+For simple, low-risk fixes that preserve user flows, authorization, data/API,
+AI/RAG, security, and deployment contracts, apply this completion checklist
+directly rather than spawning the auditor: requested scope is met; relevant
+tests have recorded passing results; no unresolved defect, limitation, or
+approval remains; and the final response accurately states any residual risk.
+
+If an audit returns work to engineering, send only its named findings for
+remediation, then repeat testing and the audit. Do not repeat the same
+remediation cycle more than twice without a human decision; record the blocker
+and the safe next action instead.
 
 ## Artefacts, handoffs, and decisions
 
