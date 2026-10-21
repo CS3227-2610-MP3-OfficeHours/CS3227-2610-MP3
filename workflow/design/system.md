@@ -54,7 +54,7 @@ states why an element is inset. Repeated cards in one list use the same width.
 Use `minmax(0, 1fr)` or an equivalent shrinkable track for flexible columns so
 long content does not force overflow.
 
-At the existing 760 px breakpoint, collapse the two-column app layout, stack
+At the shared 768 px breakpoint, collapse the two-column app layout, stack
 header/action groups as needed, and change two-column form/member layouts to one
 column. Designs may choose another breakpoint only when content behavior
 justifies it and the design records it.
