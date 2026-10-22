@@ -17,6 +17,9 @@ materially help the requested task:
 - `tester`: independently verify completed work and report evidence.
 - `acceptance-auditor`: review completion evidence in feature artefacts without
   rechecking the implementation or running tests.
+- `code-quality`: review Java, TypeScript/React, SQL, and shell code against
+  `workflow/code-quality.md`; report maintainability and consistency findings
+  without changing implementation.
 
 Role declarations live in `.codex/config.toml`; their project-local role
 instructions are under `.codex/agents/`. Shared reusable procedures are native
@@ -34,6 +37,8 @@ Examples:
 - “Use the `tester` agent to independently verify `student-ai-help`.”
 - “Use the `acceptance-auditor` agent to audit completion evidence for
   `student-ai-help`.”
+- “Use the `code-quality` agent for a read-only review of `<scope>`; report
+  findings against `workflow/code-quality.md`.”
 
 Include the expected artefact path and whether the work is read-only, review,
 or implementation when that is not obvious. The orchestrator should provide
@@ -49,14 +54,20 @@ For a substantial feature, use this ordered flow:
 3. A human approves major scope, academic-integrity, and consequential design
    choices before implementation.
 4. Engineer implements approved work, tests it, and writes `tasks.md`.
-5. Tester writes an independent `test-report.md`.
-6. The orchestrator returns tester defects to engineering and ambiguous
+5. Code-quality agent performs a read-only review against
+   `workflow/code-quality.md` after every engineering handoff. The orchestrator
+   returns actionable findings to engineering; after remediation, code quality
+   reviews the updated scope again before testing begins.
+6. Tester writes an independent `test-report.md` after the code-quality review
+   has completed.
+7. The orchestrator returns tester defects to engineering and ambiguous
    requirements to product manager or UI designer, then updates the affected
-   artefact before re-verification.
-7. After a passing test report for substantial or security-sensitive work, the
+   artefact. Engineering remediation returns to code quality before independent
+   re-verification.
+8. After a passing test report for substantial or security-sensitive work, the
    acceptance auditor reviews the feature artefacts and writes
    `completion-review.md`.
-8. The orchestrator summarizes completion for human review only when the
+9. The orchestrator summarizes completion for human review only when the
    applicable completion gate passes.
 
 A feature is substantial when it changes a user flow, role/course authorization,
@@ -78,6 +89,12 @@ For substantial or security-sensitive work, invoke `acceptance-auditor` only
 after the tester reports `Pass`. The audit is required before a completion
 summary; a verdict other than `Ready for human review` blocks completion. The
 auditor reviews artefacts only and does not replace testing.
+
+The code-quality agent always reviews implementation after the engineer's
+handoff and again after any engineering remediation. Its findings must be
+resolved, explicitly accepted by the human as a deliberate exception, or shown
+to be inapplicable before the tester begins or resumes independent verification.
+The review is not a substitute for testing or the acceptance audit.
 
 For simple, low-risk fixes that preserve user flows, authorization, data/API,
 AI/RAG, security, and deployment contracts, apply this completion checklist

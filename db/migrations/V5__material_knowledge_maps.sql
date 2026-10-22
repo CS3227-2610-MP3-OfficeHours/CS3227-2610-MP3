@@ -1,4 +1,5 @@
 -- Development-stage replacement for the obsolete course-wide map representation.
+-- The following drop deliberately discards disposable legacy course Knowledge Map test data; no preservation is required.
 DROP TABLE IF EXISTS course_knowledge_maps;
 
 CREATE TABLE material_knowledge_maps (

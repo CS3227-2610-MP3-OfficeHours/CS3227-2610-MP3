@@ -193,6 +193,8 @@ public final class PlatformIntegrationTest {
     waitFor(failed.id(), MaterialStatus.resource_only);
     check(s.listResources(alice.id(), first.id()).size() == 1, "image-only PDF remains downloadable as a resource");
     check(s.downloadResource(alice.id(), first.id(), failed.id()).content().length > 0, "image-only PDF download remains authorized");
+    s.setKnowledgeMapGenerator(packet -> SoCLaaSClient.Result.success("unused"));
+    expect(422, () -> s.generateKnowledgeMap(staffA.id(), first.id(), failed.id()), "resource-only PDF remains ineligible for Knowledge Map generation");
   }
   private void knowledgeMapLifecycle() {
     Material source = s.uploadMaterial(staffA.id(), first.id(), "Week 2.pdf", "application/pdf", twoPagePdf());

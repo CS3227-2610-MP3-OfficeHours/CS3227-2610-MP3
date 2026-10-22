@@ -25,3 +25,7 @@ config_file = "agents/tester.toml"
 [agents.acceptance-auditor]
 description = "Review feature artefacts for completion evidence after testing; do not recheck implementation or execute tests."
 config_file = "agents/acceptance-auditor.toml"
+
+[agents.code-quality]
+description = "Review project code against shared language-specific standards and report focused, evidence-based quality findings without editing code."
+config_file = "agents/code-quality.toml"

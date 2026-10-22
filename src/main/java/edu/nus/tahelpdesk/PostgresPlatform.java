@@ -37,7 +37,7 @@ public final class PostgresPlatform {
     try (Statement statement = connection.createStatement()) {
       statement.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version VARCHAR(100) PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)");
     }
-    for (String migration : List.of("V1__shared_course_forum.sql", "V2__course_materials.sql", "V3__course_knowledge_maps.sql", "V4__material_pdf_pages.sql", "V5__material_knowledge_maps.sql", "V6__forum_tags.sql", "V8__expand_forum_tag_palette.sql")) {
+    for (String migration : List.of("V1__shared_course_forum.sql", "V2__course_materials.sql", "V3__course_knowledge_maps.sql", "V4__material_pdf_pages.sql", "V5__material_knowledge_maps.sql", "V6__forum_tags.sql", "V7__material_resource_only_status.sql", "V8__expand_forum_tag_palette.sql")) {
       try (PreparedStatement seen = connection.prepareStatement("SELECT 1 FROM schema_migrations WHERE version = ?")) { seen.setString(1, migration); try (ResultSet result = seen.executeQuery()) { if (result.next()) continue; } }
       String sql = Files.readString(Path.of("db/migrations/" + migration)); connection.setAutoCommit(false);
       try (Statement statement = connection.createStatement()) { for (String part : migrationStatements(sql)) if (!part.isBlank()) statement.execute(part); try (PreparedStatement applied = connection.prepareStatement("INSERT INTO schema_migrations(version) VALUES (?)")) { applied.setString(1, migration); applied.executeUpdate(); } connection.commit(); }
@@ -45,7 +45,7 @@ public final class PostgresPlatform {
     }
   }
 
-  private static List<String> migrationStatements(String sql) {
+  static List<String> migrationStatements(String sql) {
     String source = sql.replaceAll("(?m)^--.*$", ""); List<String> statements = new ArrayList<>(); StringBuilder current = new StringBuilder(); boolean single = false, quoted = false; String dollar = null;
     for (int i=0;i<source.length();i++) {
       char c=source.charAt(i);

@@ -10,6 +10,8 @@ import java.util.stream.Collectors;
 import static edu.nus.tahelpdesk.Domain.*;
 
 public final class HttpApi implements HttpHandler {
+  static final int MAX_JSON_BODY_BYTES = 1_048_576;
+  static final int MAX_MATERIAL_UPLOAD_BODY_BYTES = 29_360_128;
   private final PlatformService service; private final SessionManager sessions; private final boolean secureCookies;
   public HttpApi(PlatformService service) { this(service, false); }
   public HttpApi(PlatformService service, boolean secureCookies) { this.service = service; this.sessions = new SessionManager(); this.secureCookies = secureCookies; }
@@ -46,7 +48,7 @@ public final class HttpApi implements HttpHandler {
     if(p.length==5 && "posts".equals(p[4]) && "POST".equals(method)){Map<String,Object>b=body(x);respond(x,201,Map.of("post",post(service.createPost(actor,courseId,Json.string(b,"title"),Json.string(b,"description"),requiredUuid(b,"tagId")))));return;}
     if(p.length>=6 && "posts".equals(p[4])) { postRoutes(x,actor,courseId,id(p[5]),p,method);return; }
     if(p.length==5 && "materials".equals(p[4]) && "GET".equals(method)){respond(x,200,Map.of("materials",service.listMaterials(actor,courseId).stream().map(this::material).toList()));return;}
-    if(p.length==5 && "materials".equals(p[4]) && "POST".equals(method)){Map<String,Object>b=body(x); Material m=service.uploadMaterial(actor,courseId,Json.string(b,"filename"),Json.string(b,"contentType"),base64(Json.string(b,"contentBase64")));respond(x,201,Map.of("material",material(m)));return;}
+    if(p.length==5 && "materials".equals(p[4]) && "POST".equals(method)){Map<String,Object>b=body(x,MAX_MATERIAL_UPLOAD_BODY_BYTES); Material m=service.uploadMaterial(actor,courseId,Json.string(b,"filename"),Json.string(b,"contentType"),base64(Json.string(b,"contentBase64")));respond(x,201,Map.of("material",material(m)));return;}
     if(p.length==7 && "materials".equals(p[4]) && "retry".equals(p[6]) && "POST".equals(method)){respond(x,200,Map.of("material",material(service.retryMaterial(actor,courseId,id(p[5])))));return;}
     if(p.length==6 && "materials".equals(p[4]) && "DELETE".equals(method)){service.deleteMaterial(actor,courseId,id(p[5]));respond(x,204,null);return;}
     if(p.length==5 && "resources".equals(p[4]) && "GET".equals(method)){respond(x,200,Map.of("resources",service.listResources(actor,courseId).stream().map(this::resource).toList()));return;}
@@ -81,7 +83,17 @@ public final class HttpApi implements HttpHandler {
   private static UUID requiredUuid(Map<String,Object> body,String key){try{Object value=body.get(key);if(!(value instanceof String s))throw new Exception();return UUID.fromString(s);}catch(Exception e){throw ApiException.validation("Choose a current tag for this course.");}}
   private static UUID queryTag(String raw){if(raw==null)return null;for(String pair:raw.split("&")){String[] kv=pair.split("=",2);if(kv[0].equals("tagId")){try{return UUID.fromString(URLDecoder.decode(kv.length==2?kv[1]:"",StandardCharsets.UTF_8));}catch(Exception e){throw ApiException.validation("Choose a current tag for this course.");}}}return null;}
   private static UUID id(String text){try{return UUID.fromString(text);}catch(Exception e){throw ApiException.hidden();}}
-  private static Map<String,Object> body(HttpExchange x)throws IOException{return Json.object(new String(x.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));}
+  private static Map<String,Object> body(HttpExchange x)throws IOException{return body(x,MAX_JSON_BODY_BYTES);}
+  private static Map<String,Object> body(HttpExchange x,int limit)throws IOException{return Json.object(new String(readBody(x.getRequestBody(),x.getRequestHeaders().getFirst("Content-Length"),limit),StandardCharsets.UTF_8));}
+  static byte[] readBody(InputStream input, String contentLength, int limit) throws IOException {
+    if (limit < 0) throw new IllegalArgumentException("limit must be non-negative");
+    if (contentLength != null) try { if (Long.parseLong(contentLength) > limit) throw ApiException.requestTooLarge(); } catch (NumberFormatException ignored) { }
+    ByteArrayOutputStream output = new ByteArrayOutputStream(Math.min(limit, 8192));
+    byte[] buffer = new byte[8192]; int remaining = limit + 1;
+    while (remaining > 0) { int count = input.read(buffer, 0, Math.min(buffer.length, remaining)); if (count < 0) break; output.write(buffer, 0, count); remaining -= count; }
+    if (output.size() > limit) throw ApiException.requestTooLarge();
+    return output.toByteArray();
+  }
   private static byte[] base64(String text) { try { return text == null ? null : Base64.getDecoder().decode(text); } catch (IllegalArgumentException e) { throw ApiException.validation("This file cannot be used. Upload an unprotected, valid PDF."); } }
   private static String token(HttpExchange x){String auth=x.getRequestHeaders().getFirst("Authorization");if(auth!=null&&auth.startsWith("Bearer "))return auth.substring(7);String cookie=x.getRequestHeaders().getFirst("Cookie");if(cookie!=null)for(String piece:cookie.split(";")){String trimmed=piece.trim();if(trimmed.startsWith("ta_session="))return trimmed.substring(11);}return null;}
   private static void respond(HttpExchange x,int status,Object value)throws IOException{byte[]bytes=value==null?new byte[0]:Json.write(value).getBytes(StandardCharsets.UTF_8);x.getResponseHeaders().set("Content-Type","application/json; charset=utf-8");x.getResponseHeaders().set("X-Content-Type-Options","nosniff");x.getResponseHeaders().set("Cache-Control","no-store");x.sendResponseHeaders(status,bytes.length);try(OutputStream out=x.getResponseBody()){out.write(bytes);}}
