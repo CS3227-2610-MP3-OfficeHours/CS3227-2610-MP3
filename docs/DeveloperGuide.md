@@ -1,3 +1,8 @@
+---
+layout: default
+title: Developer Docs
+---
+
 # Developer Guide
 
 This guide describes the design of the University TA Help Desk and the

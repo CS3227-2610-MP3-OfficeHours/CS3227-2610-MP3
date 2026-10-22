@@ -5,11 +5,11 @@ those commits added. The ordering, the outputs and the decisions recorded in
 `workflow/` are verifiable; the prompt-by-prompt detail of these sessions was
 not observed by the agent writing this summary and is therefore not described.
 
-**Owner:** @p-xp (commits authored as `XP` and `Xinping`).
+**Owner:** @p-xp.
 
 ---
 
-## Session 1 — the process itself (20 Oct)
+## Session 1 — the process itself
 
 Before any application code, the multi-agent workflow was established.
 

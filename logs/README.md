@@ -32,10 +32,12 @@ repository.
 
 | File | Period | Kind |
 | --- | --- | --- |
+| `2026-10-20-multi-agent-workflow-setup.md` | 20 Oct | Reconstructed |
 | `2026-10-20-to-21-platform-and-staff-features.md` | 20–21 Oct | Reconstructed |
 | `2026-10-21-deployment-mechanism.md` | 21 Oct | Reconstructed |
 | `2026-10-22-student-ai-help.md` | 22 Oct | Observed |
 | `2026-10-22-release-and-production.md` | 22 Oct | Observed |
+| `2026-10-22-to-23-follow-up-development.md` | 22–23 Oct | Reconstructed |
 
 ## Relationship to the workflow artefacts
 
