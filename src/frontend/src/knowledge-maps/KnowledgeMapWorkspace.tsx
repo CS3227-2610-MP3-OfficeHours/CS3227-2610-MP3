@@ -162,6 +162,9 @@ function KnowledgeMapsByPdf({
   onGenerate: (id?: string) => void;
   onReview: (id: string, decision: "approve" | "reject") => void;
 }) {
+  const [dismissedFailureNotices, setDismissedFailureNotices] = useState<Set<string>>(
+    () => new Set(),
+  );
   const eligible = maps.filter((state) => state.material.status === "active");
   return (
     <section className="knowledge-map" aria-labelledby="knowledge-map-heading">
@@ -194,6 +197,12 @@ function KnowledgeMapsByPdf({
             course={course}
             state={state}
             busy={busy === state.material.id || busy === "all"}
+            failureNoticeDismissed={dismissedFailureNotices.has(state.material.id)}
+            onDismissFailureNotice={() =>
+              setDismissedFailureNotices((dismissed) =>
+                new Set(dismissed).add(state.material.id),
+              )
+            }
             onGenerate={() => onGenerate(state.material.id)}
             onReview={(decision) => onReview(state.material.id, decision)}
           />
@@ -211,12 +220,16 @@ function MaterialMap({
   course: _course,
   state,
   busy,
+  failureNoticeDismissed,
+  onDismissFailureNotice,
   onGenerate,
   onReview,
 }: {
   course: Course;
   state: MaterialMapState;
   busy: boolean;
+  failureNoticeDismissed: boolean;
+  onDismissFailureNotice: () => void;
   onGenerate: () => void;
   onReview: (decision: "approve" | "reject") => void;
 }) {
@@ -243,9 +256,20 @@ function MaterialMap({
           </button>
         )}
       </div>
-      {material.status !== "active" && (
+      {material.status === "failed" && !failureNoticeDismissed ? (
+        <div className="job-failure extraction-failure-notice" role="alert">
+          <p>This PDF could not be parsed. Try uploading it again.</p>
+          <button
+            type="button"
+            aria-label={`Dismiss extraction failure notice for ${material.filename}`}
+            onClick={onDismissFailureNotice}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : material.status !== "active" && material.status !== "failed" ? (
         <p className="muted">Skipped: {materialStatusDetail(material)}</p>
-      )}
+      ) : null}
       {running && (
         <p role="status">
           Generating this PDF’s map. Existing maps remain available.

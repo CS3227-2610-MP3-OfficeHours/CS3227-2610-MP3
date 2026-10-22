@@ -469,6 +469,17 @@ textarea {
   margin: .35rem 0;
 }
 
+.extraction-failure-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.extraction-failure-notice p {
+  margin: 0;
+}
+
 .citation-list {
   padding-left: 1.25rem;
 }
