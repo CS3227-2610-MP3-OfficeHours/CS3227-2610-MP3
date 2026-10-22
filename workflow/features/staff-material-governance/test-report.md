@@ -363,3 +363,233 @@ xref rejection, server authorization, Resources filtering, and non-AI
 boundary have independent evidence. Stage 4A may proceed to human review.
 Stage 4B remains blocked on the approved SoC operating envelope and is outside
 this report.
+
+## Staff dashboard addendum independent verification — 2026-10-21
+
+**Scope:** Approved addendum acceptance criteria 15–20, independently reviewed
+on branch `xp/staff-features`. Source, test, and security-review inspection was
+read-only. Only this report was updated.
+
+### Commands and actual results
+
+| Check | Result |
+| --- | --- |
+| `sh scripts/test.sh` | Platform integration tests: **PASS**. The fixture intentionally emits a PDFBox malformed-PDF diagnostic. The subsequent SoCLaaS client test did not run to completion: its local fake HTTP gateway failed to bind with `java.net.SocketException: Operation not permitted`. |
+| `cd src/frontend && npm run build` | **NOT VERIFIED**: TypeScript build stopped because `tsc` is unavailable (`sh: tsc: command not found`). No dependencies were installed. |
+| `git diff --check` | **PASS**, no whitespace errors. |
+| Browser interaction checks | **NOT RUN**: no running browser/application session or installed frontend build executable was available in this verification environment. |
+
+### Criteria coverage
+
+| Criterion | Evidence and result |
+| --- | --- |
+| 15 — staff Resources upload action and overlay | **Source-reviewed; partial.** `CourseWorkspace` passes the authenticated role into `Resources`; `Upload file` is rendered only when `staff` is true. The centered dialog has a labelled file input, PDF/capacity guidance, close/cancel controls, Escape handling, focus initialization/restoration, and a Tab boundary. Upload errors remain inline and the dialog remains mounted when the upload request rejects. `PlatformIntegrationTest` rejects a student upload and verifies staff upload flows, but no browser interaction was possible. Server authorization is enforced by `requireCourseStaff` before upload validation in `PlatformService.uploadMaterial`. |
+| 16 — Knowledge Map name and feature retention | **Source-reviewed / integration evidence.** The staff tab and workspace heading read `Knowledge Map`; source rows, deletion, retry, per-material generation, candidate review, and approve/reject actions remain. Existing integration tests cover staff/student/cross-course denials, generation, approval, rejection, and retaining candidates after failed updates. |
+| 17 — no separate Source support links | **Source-reviewed.** Returned map rendering contains the map text and review controls and no Source support link list. Textual citations remain in the generated content. No browser-rendered check was possible. |
+| 18 — map viewport and scrolling | **Source-reviewed.** `.map-content` has `max-height: 70vh`, `overflow-y: auto`, a labelled `role="region"`, `tabIndex={0}`, and a visible focus style. Surrounding review actions are outside the content region. Rendered scrolling/keyboard operation was not exercised. |
+| 19 — specific diagnostics and approval block | **Integration suite PASS for fixtures.** Tests cover missing citation, malformed citation syntax, foreign source filename, invalid/textless page, trailing punctuation, and the supplied Markdown/bulleted sample shape. Each generated unverified candidate remains approval-ineligible (422). The implementation falls back to the generic message only when content/source is unavailable or no specific reason is collected. **A blocker remains:** the server's `isPlainTopicHeading` heuristic skips any short line (up to 80 characters) whose words all begin uppercase. A factual claim such as `The Course Is Definitely About Nothing` is therefore exempted as a heading and receives no missing-citation diagnostic. With another valid cited claim in the same map, this line can coexist with a candidate that has no verification message and is approvable. The integration suite has no negative fixture for this bypass. |
+| 20 — generation prompt and supplied example | **Source-reviewed / partial test evidence.** The prompt requires unformatted plain headings, one claim per line, exact filename/page citation syntax, citations as final line characters, and no punctuation after them; it also prohibits invented citations and requires every text-bearing source to be cited. `SoCLaaSClientTest` contains assertions for these prompt fragments, but the test could not run because loopback binding was denied. `PlatformIntegrationTest` feeds a Markdown/bulleted, trailing-period sample and confirms format/end-of-line reasons and approval denial. It does not establish that generation will repair the sample; the verifier correctly leaves malformed output unverified. |
+
+### Blocking defect
+
+1. **[P1] Citationless factual lines can be mistaken for headings and bypass
+   validation.** `PlatformService.isPlainTopicHeading` accepts title-case lines
+   based only on capitalization and length. Reproduce with a candidate containing
+   a valid cited claim plus `The Course Is Definitely About Nothing` on its own
+   line. That line is skipped, so the candidate may have no verification
+   message and the normal staff approval path may accept it. Do not infer that
+   every capitalized line is a heading. Require an explicit unambiguous heading
+   format or conservatively require citations for every nonblank line that is
+   not reliably identifiable as a topic heading; add a regression test proving
+   the factual line is diagnosed and cannot be approved.
+
+No blocker was confirmed for the possible false “non-canonical format” reason
+on a correctly formatted foreign filename citation: inspection shows the
+canonical matcher accepts any `.pdf` filename, while the separate comparison
+reports the filename mismatch.
+
+### Assessment and handoff
+
+**Needs changes.** Criteria 15–18 have source-level evidence but no live UI
+verification; criterion 20's prompt assertions could not execute. More
+decisively, criterion 19's missing-citation guarantee is bypassable by the
+title-case heuristic, so the approval gate is not reliable for all claim lines.
+Return the named P1 to engineering, then re-run `sh scripts/test.sh` in an
+environment that permits the SoCLaaS fake gateway's loopback bind, build the
+frontend where `tsc` is available, and perform focused browser checks for
+overlay role visibility/focus/dismissal/upload errors and map scrolling before
+acceptance.
+
+## Remediation re-verification — 2026-10-21
+
+**Scope:** Remediation cycle 1 for the P1 title-case citation bypass, followed
+by a focused review of all addendum criteria 15–20. No implementation changes
+were made; this section is the only additional report content.
+
+### Retest results
+
+| Check | Result |
+| --- | --- |
+| `sh scripts/test.sh` | Platform integration tests: **PASS**, including the new regression case. The subsequent SoCLaaS client test again could not bind its loopback fake gateway (`java.net.SocketException: Operation not permitted`), so the script did not finish successfully. |
+| `cd src/frontend && npm run build` | **NOT VERIFIED**: `tsc` is not installed in the existing frontend dependencies (`sh: tsc: command not found`). No packages were installed. |
+| `git diff --check` | **PASS**. |
+| Browser checks | **NOT RUN**: no frontend build executable or active browser session was available. |
+
+### P1 re-verification
+
+The server no longer exempts title-case/plain heading lines. In
+`citationVerificationMessage`, every nonblank line is evaluated for citation
+syntax, source filename, page validity, and citation-at-line-end; a line with no
+citation receives “A claim is missing a source citation.” The integration
+regression generates a candidate containing a valid cited claim followed by
+`The Course Is Definitely About Nothing`, asserts that specific missing-citation
+diagnostic, and asserts that `approveKnowledgeMap` returns 422. The full
+Platform integration suite passed, providing actual evidence for both
+assertions. The SoCLaaS prompt now also asks for citations on every nonblank
+line, including topic headings.
+
+**P1 status: resolved.** No citationless title-case line can bypass the
+validator through the former heading heuristic.
+
+### Criteria 15–20 focused review
+
+| Criterion | Re-verification result |
+| --- | --- |
+| 15 — staff-only Resources upload action and overlay | Source review remains consistent: the authenticated role gates the action; the dialog includes existing PDF controls/guidance, close and Escape behavior, and keeps request errors in the dialog. Service authorization still requires course staff, and integration coverage denies student upload. Actual rendered role, keyboard/focus, dismissal, and upload-error interactions remain unverified without a browser session. |
+| 16 — Knowledge Map naming and retained lifecycle | Source review confirms the tab/workspace name and retained source lifecycle, generation, retry, candidate review, and approval/rejection controls. Existing integration tests pass for upload lifecycle, authorization, generation, approval/rejection, and failed-update retention. |
+| 17 — source support links | Source review confirms no separate clickable Source support link list under returned maps; generated text and citations remain visible. No rendered browser check. |
+| 18 — viewport and scroll behavior | CSS and accessible markup remain `max-height: 70vh`, internal vertical overflow, labelled focusable region, and visible focus treatment; review actions remain outside the map content region. Actual long-content keyboard scrolling remains unverified. |
+| 19 — diagnostics and approval block | Platform integration tests pass for missing citation, noncanonical syntax, mismatched filename, invalid/textless page, trailing punctuation, and the supplied Markdown/bulleted example. The new title-case regression also passes and the approval call is denied with 422. Unclassified-output fallback remains in place. |
+| 20 — prompt and supplied example | Prompt source includes unformatted plain headings, one claim per line, canonical source/page pairs, citations on every nonblank line including headings, citation as each line's final characters, and no trailing punctuation; it prohibits invented citations and requires supplied PDFs to be cited. The integration fixture for the reported malformed Markdown/bulleted/trailing-period example remains unverified and unapprovable. Prompt assertions exist in `SoCLaaSClientTest`, but could not be executed because the loopback fake gateway could not bind. |
+
+### Assessment and handoff
+
+**Needs changes for completion evidence.** The P1 is resolved and the
+server-side regression passes. Criteria 15–18 still have only source-level UI
+evidence, and criterion 20's prompt assertions did not execute. The full script
+also remains incomplete because the environment blocks its local fake gateway.
+Obtain browser evidence for the overlay and long-map interactions, a frontend
+build in an environment with `tsc`, and a SoCLaaS client test run in an
+environment that permits loopback binding before marking the addendum Pass.
+
+## UI and build evidence follow-up — 2026-10-21
+
+The orchestrator performed these additional checks against the temporary local
+Vite frontend and in-memory Java backend:
+
+- Signed into the seeded staff account and observed **Upload file** in
+  Resources; opened the modal and confirmed focus starts on **Choose PDF**.
+- Pressed Escape; the dialog closed and focus returned to **Upload file**.
+- Confirmed Tab wraps from **Cancel** to **Close** inside the dialog.
+- Signed into the seeded student account; its course tabs were **Forum** and
+  **Resources** only, and Resources did not show **Upload file**.
+- No file was submitted. Upload error/validation interaction was not exercised.
+- The browser remained on student Resources. Returned-map rendering/scrolling
+  was not browser-tested because producing a map fixture requires PDF upload and
+  a provider-backed generation path.
+
+I independently compared the temporary frontend's `src/main.tsx` and
+`src/styles.css` byte-for-byte with the current workspace files; both matched.
+Then ran the requested build from that checkout:
+
+```sh
+cd /private/tmp/staff-features-frontend-verification
+PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm run build
+```
+
+**Result: PASS.** `tsc -b && vite build` completed; Vite transformed 28
+modules and produced the production bundle. `git diff --check` for the report
+also passes.
+
+**Updated assessment: Needs changes for remaining evidence.** The browser
+checks now verify staff/student upload-control visibility and the dialog's
+initial focus, Escape dismissal/focus restoration, and one Tab-wrap boundary.
+The temporary build passes against current frontend source. The title-case
+citation bypass remains resolved by the passing Platform integration suite.
+Still unverified in a browser are upload validation/error recovery and the
+returned Knowledge Map's rendered 70vh scrollbar/keyboard scrolling; the
+SoCLaaS client assertions still cannot run in this sandbox because its fake
+gateway cannot bind loopback. Keep the overall assessment at Needs changes
+until the map viewport behavior and remaining relevant execution evidence are
+covered.
+
+## Approved layout follow-up verification — criteria 21–22 — 2026-10-22
+
+**Scope:** Focused independent review of the approved Resources/Knowledge Map
+layout follow-up. Reviewed the updated spec/design, current implementation diff,
+server authorization path, and relevant integration tests. No implementation
+changes were made.
+
+### Criterion 21 — Resources delete controls
+
+**Source review: conforms.** The Resources row renders **Download PDF** followed
+immediately by **Delete file** in the same flex action group. Delete is inside
+the `staff &&` conditional and uses the red `danger` style; student markup has
+only the download action. Activating it invokes a confirmation that names the
+filename and states that deletion immediately removes the item from Resources
+and new AI requests and cannot be undone. Confirmation submits the existing
+course-scoped DELETE route, refreshes Resources, and reports success. The
+server's `deleteMaterial` requires course staff before looking up/deleting the
+material.
+
+`PlatformIntegrationTest` verifies that an unassigned staff actor cannot delete
+a cross-course material, that an authorized staff deletion succeeds, that the
+deleted PDF immediately disappears from an enrolled student's Resources list,
+and that its download is denied afterward. The test source does not include a
+direct student `deleteMaterial` call; the server-side staff-role guard is
+visible in `PlatformService.deleteMaterial`. I did not perform a new browser
+check of current staff/student row rendering or the confirmation interaction.
+
+### Criterion 22 — Knowledge Map workspace
+
+**Source review: conforms.** The staff tab mounts `KnowledgeMapWorkspace`, which
+loads map state and renders the `KnowledgeMapsByPdf` Course Knowledge Map
+section; it no longer loads or renders a separate material lifecycle list.
+Generation/update, refresh, status, candidate, approve/reject, and failure
+controls remain in the existing map panel components. The “AI-generated
+supporting navigation material” tagline is absent. The replacement paragraph
+explains topic organization, student AI search for relevant material and
+supporting PDF pages, retrieval guidance rather than source replacement,
+staff review/approval, and original-source citations in student answers.
+
+### Checks and assessment
+
+- Confirmed `/private/tmp/staff-features-frontend-verification/src/main.tsx`
+  and `src/styles.css` match the current repository frontend files.
+- `PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm run build` in the
+  temporary checkout — **PASS** (`tsc -b && vite build`; 28 modules transformed).
+- The engineer's current-branch handoff records `sh scripts/test.sh` as
+  **PASS** for Platform integration and SoCLaaS client tests. My attempt in
+  this sandbox passed Platform integration but the client test could not bind
+  its fake loopback gateway (`Operation not permitted`); this environment
+  therefore did not independently reproduce the full-suite pass.
+- No current browser check was completed for the new delete button visibility,
+  its confirmation/cancel/success flow, or the revised Knowledge Map content.
+  Earlier browser checks verified the upload action/modal and staff/student
+  tabs before this follow-up implementation; they do not establish the new
+  delete or Knowledge Map rendering behavior. Returned-map 70vh scrolling and
+  keyboard scrolling also remain unverified in a rendered browser session.
+
+**Focused verdict: Needs changes for UI evidence.** The implementation and
+available server tests support criteria 21–22, with no source-level defect
+identified. Close the remaining verification gap with staff and student
+Resources browser checks, a staff delete-confirmation/cancel/success check, and
+a Knowledge Map browser inspection. A temporary DOM fixture can verify the
+viewport scroll CSS without uploading a course file; that fixture was not run
+in this verification turn. Keep the overall addendum assessment at Needs
+changes until those UI behaviors are exercised.
+
+## Orchestrator test execution follow-up — 2026-10-21
+
+The orchestrator reran `sh scripts/test.sh` on the current branch with local
+loopback access enabled. **Both Platform integration tests and SoCLaaS client
+tests passed.** The SoCLaaS prompt assertions therefore have executed against
+the current source; the earlier loopback limitation is resolved. The
+frontend build also passed in the temporary checkout described above, whose
+`main.tsx` and `styles.css` were confirmed byte-for-byte identical to the
+workspace files. `git diff --check` passes.
+
+**Overall verification remains Needs changes for browser evidence only.**
+Upload-error recovery and rendered long-map keyboard scrolling have not been
+exercised in the browser. The implementation and build evidence are present,
+but the report does not claim those interactions were observed.

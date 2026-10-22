@@ -1,8 +1,8 @@
 # Staff Material Upload, Processing, Review, and Consolidation
 
 Status: Approved for Stage 4A and the Stage 4B Knowledge Map scope; Stage 4B awaits Stage 3 completion
-Approval: Human product-owner approval recorded in chat, 2026-10-20 and 2026-10-21 — approved non-AI material management, normal SoCLaaS use without published numeric limits, one manually updated Knowledge Map per course, and authorized-staff display of unverified generated maps (2026-10-21).
-Last handoff: Human product owner → Engineer, 2026-10-21 — implement the approved Stage 3 foundation, then the Stage 4B Knowledge Map flow.
+Approval: Human product-owner approval recorded in chat, 2026-10-20 through 2026-10-22 — approved non-AI material management, normal SoCLaaS use without published numeric limits, one manually updated Knowledge Map per course, authorized-staff display of unverified generated maps, and the approved staff dashboard refinements (2026-10-22).
+Last handoff: Human product owner → UI designer, 2026-10-22 — refine Resources deletion and the Knowledge Map workspace per the approved follow-up below; next owner is engineer after design alignment.
 
 ## Purpose and outcome
 
@@ -379,3 +379,166 @@ design, schema, AI-provider call, or tests were created.
 **Next owner:** Human product owner approves the AI-dependent specification and
 design after the shared AI/RAG contract is approved. @p-xp implements
 AI-dependent work only against the later approved guarded AI/RAG contract.
+
+## Approved staff-dashboard and map-validation addendum (2026-10-21)
+
+This addendum is approved by the human product owner in the request dated
+2026-10-21. It extends the approved staff-facing behavior above. Where an older
+specification or design calls the staff material workspace **Manage materials**,
+this addendum changes its visible name to **Knowledge Map**. Server-side role,
+course, source-currentness, and approval rules remain unchanged.
+
+### Confirmed behavior
+
+- In an authorized staff member's **Resources** tab, show a top-right **Upload
+  file** button. Students and other non-staff users never see this control.
+  Clicking it opens a centered overlay containing the existing PDF upload form
+  and its validation/capacity guidance. The overlay is dismissible by its close
+  control and Escape; it must not weaken the existing server-side authorization
+  or PDF validation rules.
+- Rename the existing **Manage materials** staff tab/section to **Knowledge
+  Map**. Preserve its existing material lifecycle, map generation, candidate
+  review, approval/rejection, and failure/retry features, subject to this
+  addendum's explicit display changes. Existing material list and lifecycle
+  rows remain in this workspace. Students continue to see only Resources and
+  Forum.
+- Do not render the separate clickable **Source support** download links below
+  a returned map. Keep the map's own textual source citations and verification
+  outcome visible; removing those extra links does not permit dropping source
+  provenance from generated content or from staff review.
+- Constrain the returned-map content viewport to at most 70% of the viewport
+  height (`70vh`) and provide an internal vertical scrollbar when its content
+  exceeds that height. The surrounding workspace and review actions remain
+  usable and the map content remains keyboard-readable.
+- When a map fails source validation, show the reason(s) that the validator can
+  establish, in safe staff-facing language, instead of always returning only
+  the current generic “missing valid support” message. At minimum, identify:
+  missing citations; non-canonical citation syntax or formatting; a filename
+  that does not match the source PDF; a cited page number outside the PDF or
+  without extracted text; and a claim line whose citation is not at the end of
+  the line. If several checks fail, provide a concise set of applicable
+  reasons. Use the existing general unverified-map message only when no more
+  specific safe reason can be determined. All unverified content remains
+  staff-only and approval-ineligible.
+- Update the generation prompt to request unformatted plain-text topic headings
+  and one factual claim per line, with one or more exact canonical citations as
+  the final characters of each claim line and no trailing punctuation after
+  citations. The prompt must continue to prohibit invented citations and
+  require every factual claim to be cited to supplied filename/page pairs.
+  Keep the server verifier authoritative: a prompt change does not itself make
+  a map verified.
+
+### Finding for the submitted example
+
+The current server verifier in `PlatformService.hasValidCitation` checks each
+nonblank, non-`#` line. It requires a canonical citation for the source
+filename, a page with extracted text, and that citation's closing `)` be the
+last character on the line. The submitted map bundles claims and contains
+Markdown headings such as `**Course Overview**`, which are not recognized as
+headings and have no citation; its claim lines place a period after citations,
+for example `(l0.pdf, p. 1).`, so the citation is not the line's final
+character. Either pattern is sufficient to fail current verification. The
+current prompt requires canonical citation syntax and that every supplied PDF
+be cited, but does not explicitly require one claim per line, prohibit Markdown,
+or prohibit punctuation after a citation. Therefore prompt clarification is
+part of the remedy. The current verifier does not semantically check whether a
+line bundles multiple factual claims or whether each claim is factually
+supported; the prompt should request one claim per line, and source support
+still requires human review. This finding explains the reported failure; it
+does not establish that every cited statement is factually supported by the
+PDF.
+
+### Assumptions and open decision
+
+- The upload overlay contains the existing upload form and its related
+  validation/capacity feedback. The earlier assumption that material
+  list/lifecycle rows remained in the Knowledge Map workspace was superseded by
+  the approved layout follow-up below.
+- The 70vh maximum applies to returned map content, not the entire Knowledge
+  Map workspace.
+
+### Addendum acceptance criteria
+
+15. In Resources, an authorized staff member sees **Upload file** at the top
+    right; a student does not. Activating the button opens a centered overlay
+    with the existing PDF upload controls and validation/capacity guidance.
+    Dismissal works with the close control and Escape, and unauthorized direct
+    upload attempts remain rejected server-side.
+16. The prior **Manage materials** tab/section is visibly named **Knowledge
+    Map**. Existing material list/lifecycle controls and Knowledge Map
+    generation, review, approval/rejection, and retry behavior remain available
+    to staff; student navigation remains limited to Forum and Resources.
+17. Returned map content does not show the separate clickable Source support
+    download links. Its generated citations, unverified notice/reasons, and
+    existing staff review actions remain visible as applicable.
+18. The returned map content area is no taller than 70vh and scrolls vertically
+    when content exceeds the available height. Keyboard users can reach and
+    read the entire content without losing access to surrounding review
+    actions.
+19. For fixtures with missing citations, malformed/non-canonical citation
+    syntax, wrong source filename, out-of-range or textless page, and trailing
+    content after a citation, staff receive the matching actionable validation
+    reason(s). For an
+    unclassified validation failure they receive the existing general message.
+    Every such map remains staff-only and cannot be approved.
+20. The generation prompt requests plain unformatted headings, one factual
+    claim per line, and citations as each claim line's final characters with no
+    trailing punctuation. A fixture shaped like the submitted example is either
+    corrected by generation to satisfy the canonical verifier or remains
+    unverified with a specific explanation; it is never approved solely due to
+    prompt instructions.
+
+### Verification evidence and handoff
+
+Engineering records focused UI checks for staff/student Resources controls,
+overlay open/dismiss/upload and validation states, renamed tab behavior, hidden
+support links, 70vh scrolling, plus server/UI checks for each named citation
+failure reason and the general fallback. Prompt tests inspect the submitted
+example's heading, bundled-claim, and trailing-period cases and confirm that
+accepted maps cite valid pages from their own source PDF. Independent testing
+covers new criteria 15–20 alongside existing authorization and approval
+criteria.
+
+**Next owner:** UI designer updates `design.md` to align Resources, the upload
+overlay, the renamed Knowledge Map workspace, and bounded map scrolling with
+this approved addendum. The engineer may implement after that handoff and
+Stage 3's existing dependency is satisfied. The ambiguity about moving the
+entire management section into the overlay is recorded above for design review.
+
+## Approved Resources and Knowledge Map layout follow-up (2026-10-22)
+
+This follow-up is approved by the human product owner in the request dated
+2026-10-22 and supersedes the earlier display decision in criterion 16 that
+kept material lifecycle rows in the Knowledge Map workspace. Server-side
+authorization, deletion semantics, and Knowledge Map verification/approval
+rules remain unchanged.
+
+- In Resources, assigned staff see a red **Delete file** button immediately to
+  the right of **Download PDF** on each available resource row. Students see
+  the download action only. Deletion uses the existing course-authorized
+  endpoint and confirmation; successful deletion removes the file from
+  Resources and new retrieval/generation inputs.
+- The staff **Knowledge Map** tab contains only the existing **Course Knowledge
+  Map** section and its map generation, refresh, status, and review features.
+  Remove the separate material list/lifecycle section from this tab. Upload
+  remains in Resources, and file deletion is available there.
+- Remove the “AI-generated supporting navigation material” tagline. Beneath
+  **Course Knowledge Map**, explain that the map organizes course topics and
+  helps student AI search for relevant course material and supporting PDF
+  pages; it guides retrieval, does not replace source PDFs, requires staff
+  review/approval before use, and student answers still cite original sources.
+
+### Additional acceptance criteria
+
+21. Each active resource row gives assigned staff **Download PDF** followed
+    immediately by a red **Delete file** action. Students see no delete
+    control. Deletion retains the existing confirmation and server-side
+    authorization and removes the source from Resources and new AI use.
+22. The staff Knowledge Map tab shows only **Course Knowledge Map** and its
+    existing map controls/content; it has no separate material lifecycle list.
+    The tagline is absent, and explanatory text accurately describes topic
+    search/retrieval, staff approval, and original-PDF citations.
+
+The engineer records focused role-based Resources checks, delete behavior,
+Knowledge Map section/content checks, and the existing map verification and
+authorization test results.

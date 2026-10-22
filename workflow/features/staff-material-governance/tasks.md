@@ -110,3 +110,81 @@ approve/reject, stale, source citations, and staff-only access.
 - Added integration coverage for retained unverified output and server-side
   approval denial. Security review:
   `workflow/security/unverified-knowledge-map-review.md`.
+
+## Approved dashboard and map-diagnostic addendum — criteria 15–20
+
+### Implemented
+
+- Moved staff PDF upload from the materials workspace into a Resources
+  **Upload file** action and centered modal with the existing PDF form and
+  guidance. The dialog supports close/Escape, focus trapping/restoration,
+  retains selection after failures, and cannot be dismissed through its
+  backdrop while an upload is running.
+- Renamed the staff workspace/tab to **Knowledge Map**. Its material lifecycle
+  list and per-PDF generation/review controls remain available; upload now
+  starts from Resources.
+- Removed separate clickable **Source support** links under returned maps.
+  Generated text and citations remain visible. Map content areas are capped at
+  70vh, internally scrollable, keyboard focusable, and labelled.
+- Added specific server-side unverified-map explanations for missing citations,
+  noncanonical syntax, mismatched filenames, invalid/textless pages, and
+  citations followed by text or punctuation. Reasons are deduplicated;
+  unverified content remains staff-only and server approval remains blocked.
+- Updated the prompt for plain topic headings, one claim per line, exact
+  canonical citations at each claim line's end, and no trailing punctuation.
+  Updated the citation-contract review to document canonical-only validation.
+
+### Test evidence
+
+- `sh scripts/test.sh` — PASS (`Platform integration tests: PASS`). Added
+  regression tests for the supplied Markdown/bulleted example and each listed
+  diagnostic class. The malformed-PDF fixture emits an expected PDFBox log.
+- SoCLaaS client tests — PASS when loopback binding is permitted. Added prompt
+  assertions for plain headings, one claim per line, and final canonical
+  citations.
+- Frontend build — PASS (`tsc -b && vite build`) using an isolated temporary
+  copy at `/private/tmp/staff-features-frontend-verification` with the recovered
+  offline dependencies. The repository frontend dependencies were not changed.
+- `git diff --check` — PASS after implementation.
+
+**Next owner:** Tester, for independent HTTP and browser verification of the
+modal's role visibility, focus and dismissal behavior, preserved material/map
+lifecycle, returned-map scrolling, and diagnostic messages. Verify the supplied
+sample remains unverified and unapprovable.
+
+## Tester remediation — uncited title-case line false acceptance
+
+- Removed title-case heading exemptions from server citation verification. Every
+  nonblank line now requires valid canonical source/page support.
+- Tightened the prompt so even plain, unformatted topic-heading lines must end
+  with a valid citation. A prompt heading cannot bypass server validation.
+- Added the reported adversarial regression: a valid cited claim followed by
+  `The Course Is Definitely About Nothing` receives the missing-citation reason
+  and cannot be approved.
+- Added a client prompt assertion that citations are required on all nonblank
+  lines, including headings.
+- Reverification evidence: `sh scripts/test.sh` — PASS (`Platform integration
+  tests: PASS`; `SoCLaaS client tests: PASS`). The malformed-PDF fixture emits
+  its expected PDFBox diagnostic. The new regression confirms the candidate is
+  unverified and approval is denied.
+- **Next owner:** tester, for independent re-verification of the cited-claim plus
+  uncited title-case line case, the repaired frontend build, and the full prior
+  acceptance scope.
+- The temporary-copy frontend build passed; repository `node_modules` remains untouched.
+
+## Approved Resources and Knowledge Map layout follow-up — criteria 21–22
+
+- Added a staff-only red **Delete file** action immediately after **Download
+  PDF** in each Resources row. It reuses the existing delete endpoint and
+  confirmation; students retain download-only rows.
+- Removed the material lifecycle list from the Knowledge Map tab. The tab now
+  renders the existing **Course Knowledge Map** section and map operations.
+- Removed the AI-generated tagline and added an explanation of topic search,
+  student AI retrieval, staff approval, and original-PDF citation behavior.
+- Updated `spec.md` and `design.md` to record the approved follow-up and
+  supersede the earlier placement of lifecycle rows.
+- Verification: isolated-copy frontend `npm run build` — PASS
+  (`tsc -b && vite build`); `sh scripts/test.sh` — PASS (Platform integration
+  and SoCLaaS client suites); `git diff --check` — PASS.
+- **Next owner:** Tester, to verify staff/student Resources actions, deletion,
+  Knowledge Map layout and map controls, plus existing authorization tests.
