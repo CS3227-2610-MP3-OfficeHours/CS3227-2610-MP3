@@ -42,6 +42,86 @@ of the gate turned out to be much easier, and much more durable, than improving
 the review in front of it. A human in the loop is only a control if being
 approved doesn't buy very much.
 
+## Spec-Driven Development
+
+### Writing a Specification That Is Actually Precise
+
+Our first instinct was that a precise specification means a detailed one, and
+we wrote a fairly long spec for the student AI feature before anyone touched
+code. It read well. The problem only showed up during implementation, when the
+engineer agent hit a question that both the approved specification and the
+approved design answered, differently. One said a refused request should still
+point the student at the relevant material; the other said a refusal should be
+a fixed message and nothing else. Both documents had been approved by us. Both
+were specific. An implementer could follow either one and be in violation of
+the other.
+
+What saved us was a line we had put in the spec almost as boilerplate, saying
+that the normative record under workflow/specs/ governs wherever two artefacts
+disagree. That one sentence turned what would have been an argument into a
+lookup, and the engineer resolved it without coming back to us. We would not
+have thought to write a precedence rule in advance if we were starting again
+from nothing, but we would now, because with several approved documents per
+feature it is not a question of whether two of them will eventually disagree.
+
+The other test of precision we ended up using is simpler: a specification is
+not precise enough if its acceptance criteria can be satisfied while the
+feature does not work. More on that below, because that one bit us twice.
+
+### What Happens When Behaviour Changes
+
+The academic-integrity boundary - what the assistant is and is not allowed to
+say - changed three times over the project, and watching how each change
+travelled was probably the most useful part of using SDD for us.
+
+It started as "guidance only, always". Building it revealed that this refuses
+"when is the midterm", which is course administration rather than assessed work
+and is exactly the kind of thing a help desk exists for. The fix was to amend
+the specification into three scopes rather than quietly special-case it in the
+prompt. Later, resolving the contradiction above changed what a refusal does,
+so we reissued the answer guidelines as v2 with a change-log row and kept the
+old rule visible as superseded. The version string is rendered into the prompt
+the server sends and asserted by a test, so the document and the running system
+cannot drift apart without something failing.
+
+The part we got wrong was assuming a behaviour change is finished when the code
+and the policy document are updated. During verification the tester found that
+the refusal row in two spec documents and one user story still described the
+old behaviour. Nothing was broken, but acceptance is measured against the
+requirement text, so for anyone reading the artefacts the feature was wrong. A
+behaviour change is only done when every artefact that asserts that behaviour
+has been amended too.
+
+### Tests That Match the Words Instead of the Intent
+
+This is where SDD was most uncomfortable for us, because it is very easy to
+write a test that satisfies a criterion and proves nothing.
+
+Our criterion said that answers must carry citations, and our validator checked
+that each answer had at least one valid citation. That is the criterion, met
+exactly. The tester then produced an answer containing an invented midterm date
+and an invented weightage, followed by one real citation, which rendered under
+the badge that tells a student the answer is sourced from course material. The
+words were satisfied; the intent, which is that a student cannot be told
+something the material does not say, was not. We changed the check to require
+that every asserting sentence carries its own citation.
+
+The second one was worse because it was our own test. We had a test asserting
+that a PDF with an approved Knowledge Map is retrieved before one without, and
+it passed. The tester noticed that our two fixtures were not otherwise equal
+and the mapped file also happened to win the alphabetical tie-break, which
+means the test would have passed with the entire feature deleted. A green test
+that cannot fail is worse than no test, because it gets counted as evidence.
+
+The last gap was one no amount of specification discipline would have closed.
+Every suite passed against a stubbed gateway, and then every question against
+the real one returned a 503, because the permitted models reason before
+answering and our token budgets were consumed before any answer was emitted.
+Three rounds of verification and an acceptance audit had all passed a feature
+that could not answer a single question, because all of them stubbed the thing
+that was broken. If we did this again we would run one live call against the
+real dependency before anyone writes a verification report.
+
 ## Multi-Agent SE
 
 ### Specialized Agents
