@@ -1,16 +1,59 @@
 # Student AI Help
 
-Status: Draft — blocked from implementation approval pending SoC operating-envelope details
-Approval: Pending human approval; the academic-integrity and access constraints below are confirmed from Phase 0.
-Last handoff: Product manager → Human product owner / UI designer, 2026-10-20 — recorded the confirmed guidance-only boundary and approved consolidation-retrieval rule; resolve the SoC-service gate before approval.
+Status: Approved for implementation
+Approval: Human product-owner approval recorded in chat, 2026-10-21 — the three-scope answer boundary, `answer-guidelines.md` (v1, and v2's narrowed refusal), `design.md`, the two-tier deterministic screen, and the accepted lexical-retrieval limitation. The access, grounding, and untrusted-input constraints below are confirmed from Phase 0. The SoC operating-envelope gate is now closed (see below).
+Last handoff: Orchestrator → Human product owner, 2026-10-21 — both prior blockers are closed and both in-flight decisions (the two-tier screen, and the uncomposed refusal recorded as `answer-guidelines.md` amendment A1) are approved. Implementation, independent testing (`test-report.md`, round 3 `Pass`), and the acceptance audit (`completion-review.md`) are complete. One decision remains: audit finding F1, on whether AC9's coverage condition is met or waived.
+
+## Normative decision record
+
+`workflow/specs/student-ai-help.md` is adopted as normative for this feature.
+It specifies the answer-scope decision, the map-narrowed retrieval contract,
+the API contract, the prompt and injection controls, and the required
+acceptance evidence. `answer-guidelines.md` in this directory is the versioned,
+approvable statement of what each scope may say.
+
+Where this document and the normative record differ in detail, the normative
+record governs; where this document states a confirmed constraint below, that
+constraint still binds.
+
+## Resolved: the academic-integrity boundary
+
+The earlier "guidance only, in all cases" rule is **superseded**. It refused
+course administration, which is not assessed work and which a help desk exists
+to answer. The feature now has three scopes, decided server-side per request:
+
+| Scope | Behaviour |
+| --- | --- |
+| `administrative` | Direct factual answer about how the course is run — assessment dates, deadlines, weightage, venues, policies, where a topic lives — with original PDF filename/page citations |
+| `academic` | Guidance only: direction, next step, conceptual explanation, or a clarifying question, with citations. No complete solution and nothing submission-ready |
+| `refused` | A short fixed boundary-preserving redirect, with no guidance and no citations, composed server-side without retrieval or a gateway call (`answer-guidelines.md` amendment A1) |
+
+The scope is the **more restrictive** of a deterministic pattern screen over
+the student's own text and a short model classification that never sees any
+retrieved material. The screen is authoritative and fails closed, so neither a
+jailbroken classifier nor injected PDF, filename, Knowledge Map, or forum text
+can widen what the assistant answers. This is the feature's primary
+academic-integrity control, and it is a server control rather than a prompt
+instruction.
+
+## Resolved: how student retrieval uses the staff Knowledge Maps
+
+Student retrieval reads original PDF page text, and uses **approved,
+source-current** per-material Knowledge Maps only to narrow which materials
+and pages are read first. Narrowing is deterministic server-side scoring; map
+text is never sent to the gateway and never shown to a student, so it cannot
+carry instructions into a model call. A pending, rejected, unverified, or
+digest-stale map contributes nothing and can never make a material eligible.
 
 ## Purpose and outcome
 
-An enrolled student can ask the course's student AI for help understanding
-course material. The assistant is a study aid: it gives direction, a useful
-line of reasoning, explanations, or clarifying questions and points the
-student to the relevant original course material. It must not give a specific,
-ready-to-submit answer or an answer a student can simply copy and paste.
+An enrolled student can ask the course's student AI about the course. For a
+question about how the course is run, it answers directly and cites the
+material it read. For a question about course content, it is a study aid: it
+gives direction, a useful line of reasoning, explanations, or clarifying
+questions and points the student to the relevant original course material. In
+no case does it give a specific, ready-to-submit answer or an answer a student
+can simply copy and paste.
 
 This is the student-role LLM feature assigned to **@ziyang**. Shared AI,
 authorization, ingestion, and retrieval services remain owned by **@p-xp**.
@@ -80,9 +123,14 @@ question, or reference where that can be done safely.
 1. As an enrolled student, I can ask a course-specific conceptual question and
    receive a clearly labelled hint or explanation with source PDF/page
    citations, so I can continue my own work.
-2. As an enrolled student, when my wording asks for a final answer, I receive
-   a brief boundary-preserving redirect and study guidance rather than a
-   submission-ready answer.
+2. As an enrolled student, when my wording demands a final answer or
+   submission-ready work, I receive a brief boundary-preserving redirect that
+   invites me to name the concept I am stuck on, rather than a
+   submission-ready answer. *Amended 2026-10-21 per `answer-guidelines.md`
+   amendment A1: the redirect carries no study guidance and no citations,
+   because composing one would require handing the model this course's source
+   material for the request class that just asked for work to submit. To get
+   guidance I rephrase the question around the concept.*
 3. As an enrolled student, I see an honest failure state when the course has
    no usable material, the evidence is insufficient, or the AI service cannot
    answer, so I do not mistake a system failure for a course answer.
@@ -173,20 +221,36 @@ The implementation and verification must cover at least these cases:
 
 ## Open decisions and blockers
 
-1. **Blocking:** the SoC service owner must provide the permitted model(s),
-   embedding capability, rate/concurrency limits, quota/budget behavior, and
-   official outage semantics. The team then records the concrete retry,
-   queueing, and user-facing limit behavior in this and the shared spec.
-2. **Needs UI design:** exact request entry, citations display, refusal copy,
-   and loading/empty/error layouts must be documented in `design.md` before
-   implementation. The design must not weaken the server controls in this
+1. **Closed, 2026-10-21.** The SoCLaaS envelope is recorded in
+   `workflow/implementation_plan.md`: an OpenAI-compatible school-hosted
+   gateway at `https://soclaas-api.comp.nus.edu.sg/v1`, server-held key, chat
+   and `bge-m3` embedding models available, and normal-use operation accepted
+   by the product owner without published numeric quotas. The feature
+   therefore applies bounded local controls instead: a per-student
+   per-course limit of 5 requests per 60 seconds, request timeouts, and the
+   shared adapter's neutral 429 / 5xx / timeout states.
+2. **Closed, 2026-10-21.** `design.md` in this directory documents request
+   entry, scope labelling, citation display, refusal copy, and every
+   loading/empty/error layout. It does not weaken a server control in this
    specification.
+3. **Closed, 2026-10-21.** The human product owner approved (a) the three-scope boundary that permits direct
+   administrative answers, (b) `answer-guidelines.md` version
+   `student-answer-policy/v2`, and (c) the accepted limitation that retrieval
+   narrowing is lexical rather than embedding-based for this release.
 
 ## Acceptance criteria
 
 1. A signed-in, enrolled student can submit a non-empty request for a course
-   they belong to and receive a clearly labelled study-guidance result only
-   when the shared service has eligible same-course evidence.
+   they belong to and receive a clearly labelled result — a direct answer for
+   an `administrative` question, study guidance for an `academic` one — only
+   when the service has eligible same-course evidence. The scope label is
+   always visible, so a direct answer is never mistaken for an answer to
+   graded work and guidance is never mistaken for a solution.
+1a. The resolved scope is the more restrictive of the deterministic screen and
+   the model classification. A question carrying an assessment marker is
+   answered at `academic` or tighter even when the classifier returns
+   `administrative`; an override marker yields `refused`. A malformed,
+   unexpected, or failed classification yields `academic`.
 2. Every successful material-grounded result displays the original source PDF
    filename and page number(s) for each material claim; the cited source is
    active, current, and belongs to the requested course.
@@ -225,14 +289,15 @@ The implementation and verification must cover at least these cases:
 
 ## Required approvals and next handoff
 
-**Approval required:** Human product owner must approve this feature scope and
-the UI design. The feature cannot become implementation-approved until the SoC
-operating envelope in Open Decision 1 is recorded. Any decision that relaxes the no-specific-answer
-boundary must be recorded here and re-reviewed.
+**Approval required:** Human product owner must approve this feature scope,
+`workflow/specs/student-ai-help.md`, `answer-guidelines.md` version
+`student-answer-policy/v2`, and `design.md`. Any later decision that relaxes
+the no-submission-ready-answer boundary, or that widens what
+`administrative` covers, is a change to `answer-guidelines.md` and must be
+re-approved there with a new version string.
 
-**Next owner:** UI designer creates
-`workflow/features/student-ai-help/design.md` after the product owner approves
-the behavior. @p-xp publishes the shared AI-service contract after the SoC
-gate; @ziyang implements only against that approved contract. The engineer
-then records delivery evidence in `tasks.md`, followed by independent tester
-evidence in `test-report.md`.
+**Next owner:** Engineer (@ziyang) implements the approved artefacts against
+the existing shared platform, material, and Knowledge Map contracts, and
+records delivery evidence in `tasks.md`. An independent tester then maps
+actual results to the acceptance criteria in `test-report.md`. Integration
+defects in shared services go to @p-xp with a reproducible case.
