@@ -29,8 +29,10 @@ public class PlatformService {
   private final Map<UUID, KnowledgeMap> approvedMaps = new ConcurrentHashMap<>();
   private final Map<UUID, KnowledgeMapJob> knowledgeMapJobs = new ConcurrentHashMap<>();
   private final Map<String, Deque<Instant>> materialRetries = new ConcurrentHashMap<>();
+  private final Map<String, Deque<Instant>> studentAiRequests = new ConcurrentHashMap<>();
   private static final int MAX_MATERIAL_BYTES = 20 * 1024 * 1024;
   private static final int MAX_ACTIVE_MATERIALS = 20;
+  private static final int MAX_STUDENT_AI_REQUESTS_PER_MINUTE = 5;
   private final ScheduledExecutorService materialProcessor = Executors.newSingleThreadScheduledExecutor(r -> {
     Thread thread = new Thread(r, "material-processor"); thread.setDaemon(true); return thread;
   });
@@ -41,6 +43,7 @@ public class PlatformService {
   private final Runnable afterMutation;
   private volatile KnowledgeMapGenerator knowledgeMapGenerator;
   private volatile boolean knowledgeMapFallbackConfigured;
+  private volatile StudentAiService.Provider studentAiProvider;
 
   @FunctionalInterface interface KnowledgeMapGenerator { SoCLaaSClient.Result generate(String sourcePacket); }
 
@@ -68,6 +71,8 @@ public class PlatformService {
   /** The gateway client is installed only by the application bootstrap, never by a browser request. */
   void setKnowledgeMapGenerator(KnowledgeMapGenerator generator) { setKnowledgeMapGenerator(generator, false); }
   void setKnowledgeMapGenerator(KnowledgeMapGenerator generator, boolean fallbackConfigured) { knowledgeMapGenerator = generator; knowledgeMapFallbackConfigured = generator != null && fallbackConfigured; }
+  /** The student gateway path is installed only by the application bootstrap, never by a browser request. */
+  void setStudentAiProvider(StudentAiService.Provider provider) { studentAiProvider = provider; }
   boolean knowledgeMapFallbackConfigured(UUID actor, UUID courseId) { requireCourseStaff(actor, courseId); return knowledgeMapGenerator != null && knowledgeMapFallbackConfigured; }
 
   public synchronized User signup(String username, String password, String selectedRole) {
@@ -225,6 +230,75 @@ public class PlatformService {
   public synchronized void deleteComment(UUID actor, UUID courseId, UUID postId, UUID commentId) {
     requireCourseMember(actor, courseId); requirePostInCourse(courseId, postId); Comment comment = requireCommentForPost(postId, commentId); requireDeletion(actor, courseId, comment.authorId()); comments.remove(commentId); changed();
   }
+  /**
+   * Student AI help for one course-scoped question.
+   *
+   * <p>Authorization, question validation, and the local rate limit all run
+   * before any gateway call. Only active, text-ready PDFs of this course are
+   * eligible, and an approved Knowledge Map is attached only while its stored
+   * digest still matches the current PDF bytes, so a pending, rejected,
+   * unverified, or stale map cannot influence retrieval.
+   */
+  public StudentAiService.Answer studentAiHelp(UUID actor, UUID courseId, String question) {
+    requireEnrolledStudent(actor, courseId);
+    String cleaned = requireQuestion(question);
+    enforceStudentAiLimit(actor, courseId);
+    StudentAiService.Provider provider = studentAiProvider;
+    if (provider == null) throw ApiException.unavailable(
+        "AI help is unavailable right now. The forum and course resources still work - try again later.");
+    try { return StudentAiService.answer(cleaned, studentAiCandidates(courseId), provider); }
+    catch (StudentAiService.Unanswerable e) { throw e.api; }
+  }
+
+  /** Lets the student UI hide the tab when the server has no student gateway configured. */
+  public boolean studentAiConfigured(UUID actor, UUID courseId) {
+    requireEnrolledStudent(actor, courseId); return studentAiProvider != null;
+  }
+
+  /** Staff are deliberately refused with the same response as a non-member. */
+  private void requireEnrolledStudent(UUID actor, UUID courseId) {
+    if (requireUser(actor).role() != Role.student) throw ApiException.hidden();
+    if (membershipRole(courseId, actor) != Role.student) throw ApiException.hidden();
+    requireCourse(courseId);
+  }
+
+  private static String requireQuestion(String question) {
+    String cleaned = question == null ? "" : question.trim();
+    if (cleaned.isEmpty()) throw ApiException.validation("Enter a question first.");
+    if (cleaned.length() > StudentAiService.MAX_QUESTION_CHARS)
+      throw ApiException.validation("Shorten your question to " + StudentAiService.MAX_QUESTION_CHARS + " characters or fewer.");
+    return cleaned;
+  }
+
+  private void enforceStudentAiLimit(UUID actor, UUID courseId) {
+    String key = actor + ":" + courseId; Instant cutoff = Instant.now().minusSeconds(60);
+    Deque<Instant> attempts = studentAiRequests.computeIfAbsent(key, ignored -> new ArrayDeque<>());
+    synchronized (attempts) {
+      while (!attempts.isEmpty() && attempts.peekFirst().isBefore(cutoff)) attempts.removeFirst();
+      if (attempts.size() >= MAX_STUDENT_AI_REQUESTS_PER_MINUTE) throw ApiException.rateLimited(
+          "You have asked a few questions in quick succession. Wait a moment and try again.");
+      attempts.addLast(Instant.now());
+    }
+  }
+
+  /** Snapshot of eligible evidence, read at request time so revoked sources drop out immediately. */
+  private synchronized List<StudentAiService.Candidate> studentAiCandidates(UUID courseId) {
+    List<StudentAiService.Candidate> candidates = new ArrayList<>();
+    for (Material material : activeMaterials(courseId)) {
+      List<StudentAiService.SourcePage> pages = materialPages.getOrDefault(material.id(), List.of()).stream()
+          .filter(page -> page.courseId().equals(courseId) && page.invalidatedAt() == null && !page.text().isBlank())
+          .sorted(Comparator.comparingInt(PdfPage::pageNumber))
+          .map(page -> new StudentAiService.SourcePage(material.id(), material.filename(), page.pageNumber(), page.text()))
+          .toList();
+      if (pages.isEmpty()) continue;
+      KnowledgeMap approved = approvedMaps.get(material.id());
+      String mapText = approved != null && approved.status() == KnowledgeMapStatus.approved
+          && approved.verificationMessage() == null && sourceCurrent(approved) ? approved.content() : null;
+      candidates.add(new StudentAiService.Candidate(material.id(), material.filename(), mapText, pages));
+    }
+    return List.copyOf(candidates);
+  }
+
   public User author(UUID id) { return requireUser(id); }
   public Role membershipRole(UUID courseId, UUID userId) { Membership value = membership(courseId, userId); return value == null ? null : value.role(); }
   private void requireDeletion(UUID actor, UUID courseId, UUID authorId) {

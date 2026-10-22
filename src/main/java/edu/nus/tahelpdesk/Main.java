@@ -14,6 +14,8 @@ public final class Main {
     if (config.usesPostgres()) SeedData.seedIfEmpty(platform);
     SoCLaaSClient staffLlm = SoCLaaSClient.staffFromEnvironment();
     if (staffLlm != null) platform.setKnowledgeMapGenerator(staffLlm::generateKnowledgeMap, staffLlm.fallbackConfigured());
+    SoCLaaSClient studentLlm = SoCLaaSClient.studentFromEnvironment();
+    if (studentLlm != null) platform.setStudentAiProvider(studentLlm.studentProvider());
     server.createContext("/", new HttpApi(platform, config.production())); server.setExecutor(Executors.newVirtualThreadPerTaskExecutor()); server.start();
     System.out.println("TA Help Desk listening on http://localhost:" + port);
   }

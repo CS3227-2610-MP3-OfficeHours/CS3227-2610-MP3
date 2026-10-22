@@ -1,4 +1,4 @@
-import { FormEvent, StrictMode, useCallback, useEffect, useState } from "react";
+import { FormEvent, StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
@@ -14,7 +14,10 @@ type Material = { id: string; filename: string; status: string; pageCount: numbe
 type KnowledgeMap = { id: string; materialId: string; status: string; content: string; verificationMessage?: string | null; reviewedBy?: string | null; reviewedAt?: string | null; createdAt: string; updatedAt: string };
 type KnowledgeMapJob = { id: string; materialId: string; status: string; failureMessage?: string | null; createdAt: string; updatedAt: string };
 type MaterialMapState = { material: Material; candidate: KnowledgeMap | null; approved: KnowledgeMap | null; job: KnowledgeMapJob | null };
-type Tab = "forum" | "resources" | "materials" | "members" | "settings";
+type AiOutcome = "administrative" | "guidance" | "refused" | "insufficient_evidence";
+type AiCitation = { materialId: string; filename: string; page: number; downloadPath: string };
+type AiResult = { outcome: AiOutcome; answer: string; citations: AiCitation[] };
+type Tab = "forum" | "resources" | "ai-help" | "materials" | "members" | "settings";
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, { credentials: "same-origin", ...options, headers: { ...(options.body ? { "Content-Type": "application/json" } : {}), ...options.headers } });
@@ -43,7 +46,7 @@ function App() {
 
 function CourseWorkspace({ user, course, tab, setTab, onCourseChange, onCourseDeleted, error, notice, clearMessages, reportError, reportNotice }: { user: User; course: Course; tab: Tab; setTab: (tab: Tab) => void; onCourseChange: (course: Course) => void; onCourseDeleted: (id: string) => void; error: string; notice: string; clearMessages: () => void; reportError: (message: string) => void; reportNotice: (message: string) => void }) {
   const staff = user.role === "staff"; const navigate = (next: Tab) => { clearMessages(); setTab(next); };
-  return <><div className="course-heading"><p className="eyebrow">My courses / {course.code}</p><h1>{course.name}</h1><span className="badge">{staff ? "Staff access" : "Enrolled"}</span></div><nav className="tabs" aria-label="Course sections"><button className={tab === "forum" ? "active" : ""} onClick={() => navigate("forum")}>Forum</button><button className={tab === "resources" ? "active" : ""} onClick={() => navigate("resources")}>Resources</button>{staff && <><button className={tab === "materials" ? "active" : ""} onClick={() => navigate("materials")}>Manage materials</button><button className={tab === "members" ? "active" : ""} onClick={() => navigate("members")}>Members</button><button className={tab === "settings" ? "active" : ""} onClick={() => navigate("settings")}>Settings</button></>}</nav>{error && <Banner kind="error" message={error} onDismiss={clearMessages} />}{notice && <Banner kind="success" message={notice} onDismiss={clearMessages} />}{tab === "forum" && <Forum user={user} course={course} reportError={reportError} reportNotice={reportNotice} />}{tab === "resources" && <Resources course={course} reportError={reportError} />}{tab === "materials" && staff && <ManageMaterials course={course} reportError={reportError} reportNotice={reportNotice} />}{tab === "members" && staff && <Members course={course} reportError={reportError} reportNotice={reportNotice} />}{tab === "settings" && staff && <Settings course={course} reportError={reportError} reportNotice={reportNotice} onChanged={onCourseChange} onDeleted={onCourseDeleted} />}</>;
+  return <><div className="course-heading"><p className="eyebrow">My courses / {course.code}</p><h1>{course.name}</h1><span className="badge">{staff ? "Staff access" : "Enrolled"}</span></div><nav className="tabs" aria-label="Course sections"><button className={tab === "forum" ? "active" : ""} onClick={() => navigate("forum")}>Forum</button><button className={tab === "resources" ? "active" : ""} onClick={() => navigate("resources")}>Resources</button>{!staff && <button className={tab === "ai-help" ? "active" : ""} onClick={() => navigate("ai-help")}>AI help</button>}{staff && <><button className={tab === "materials" ? "active" : ""} onClick={() => navigate("materials")}>Manage materials</button><button className={tab === "members" ? "active" : ""} onClick={() => navigate("members")}>Members</button><button className={tab === "settings" ? "active" : ""} onClick={() => navigate("settings")}>Settings</button></>}</nav>{error && <Banner kind="error" message={error} onDismiss={clearMessages} />}{notice && <Banner kind="success" message={notice} onDismiss={clearMessages} />}{tab === "forum" && <Forum user={user} course={course} reportError={reportError} reportNotice={reportNotice} />}{tab === "resources" && <Resources course={course} reportError={reportError} />}{tab === "ai-help" && !staff && <AiHelp course={course} />}{tab === "materials" && staff && <ManageMaterials course={course} reportError={reportError} reportNotice={reportNotice} />}{tab === "members" && staff && <Members course={course} reportError={reportError} reportNotice={reportNotice} />}{tab === "settings" && staff && <Settings course={course} reportError={reportError} reportNotice={reportNotice} onChanged={onCourseChange} onDeleted={onCourseDeleted} />}</>;
 }
 
 function Forum({ user, course, reportError, reportNotice }: { user: User; course: Course; reportError: (message: string) => void; reportNotice: (message: string) => void }) {
@@ -88,6 +91,59 @@ function MemberList({ title, members, onRemove }: { title: string; members: Memb
 
 function Settings({ course, reportError, reportNotice, onChanged, onDeleted }: { course: Course; reportError: (message: string) => void; reportNotice: (message: string) => void; onChanged: (course: Course) => void; onDeleted: (id: string) => void }) { const [name, setName] = useState(course.name); const [busy, setBusy] = useState(false); const rename = async (event: FormEvent) => { event.preventDefault(); setBusy(true); try { const result = await api<{ course: Course }>(`/api/courses/${course.id}`, { method: "PATCH", body: JSON.stringify({ name }) }); onChanged(result.course); reportNotice("Course name updated."); } catch (e) { reportError((e as Error).message); } finally { setBusy(false); } }; const remove = async () => { if (!confirm(`Delete ${course.code} permanently? Its forum posts, replies, memberships, and resources will no longer be accessible.`)) return; setBusy(true); try { await api(`/api/courses/${course.id}`, { method: "DELETE" }); onDeleted(course.id); } catch (e) { reportError((e as Error).message); setBusy(false); } }; return <div><h2>Course settings</h2><form className="editor narrow" onSubmit={rename}><label htmlFor="course-name">Course name</label><input id="course-name" value={name} onChange={event => setName(event.target.value)} disabled={busy} required /><button className="primary" disabled={busy}>{busy ? "Saving…" : "Save name"}</button></form><section className="danger-zone"><h3>Delete course</h3><p>This permanently removes the course and makes its forum data unavailable.</p><button className="danger" onClick={() => void remove()} disabled={busy}>Delete course</button></section></div>; }
 function Resources({ course, reportError }: { course: Course; reportError: (message: string) => void }) { const [resources, setResources] = useState<Resource[]>([]); const [loading, setLoading] = useState(true); useEffect(() => { setLoading(true); api<{ resources: Resource[] }>(`/api/courses/${course.id}/resources`).then(result => setResources(result.resources)).catch(e => reportError((e as Error).message)).finally(() => setLoading(false)); }, [course.id, reportError]); return <div><h2>Resources</h2><p className="muted">Course PDFs shared by staff.</p>{loading ? <p className="loading">Loading resources…</p> : resources.length ? <ul className="rows">{resources.map(resource => <li key={resource.id}><span>📄 {resource.filename}</span><a href={resource.downloadPath}>Download PDF</a></li>)}</ul> : <EmptyState title="No resources yet" text="Course staff have not shared any PDFs yet." />}</div>; }
+const AI_MAX_QUESTION = 1000;
+/** The scope label is always shown, so a direct answer is never read as an answer to graded work. */
+const AI_LABELS: Record<AiOutcome, { text: string; tone: string }> = {
+  administrative: { text: "Course info", tone: "info" },
+  guidance: { text: "Study guidance — not an answer to submit", tone: "accent" },
+  refused: { text: "Guidance only", tone: "accent" },
+  insufficient_evidence: { text: "Not enough in the material", tone: "warn" },
+};
+
+/** Student-only AI help. Nothing here writes to the forum, by design. */
+function AiHelp({ course }: { course: Course }) {
+  const [question, setQuestion] = useState(""); const [result, setResult] = useState<AiResult | null>(null);
+  const [panel, setPanel] = useState(""); const [busy, setBusy] = useState(false); const [checking, setChecking] = useState(true);
+  const resultHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { let active = true; setChecking(true);
+    api<{ configured: boolean }>(`/api/courses/${course.id}/ai-help`)
+      .then(state => { if (active && !state.configured) setPanel("AI help is unavailable right now. The forum and course resources still work — try again later."); })
+      .catch(() => { if (active) setPanel("AI help is unavailable right now. The forum and course resources still work — try again later."); })
+      .finally(() => { if (active) setChecking(false); });
+    return () => { active = false; }; }, [course.id]);
+  useEffect(() => { if (!busy && (result || panel)) resultHeading.current?.focus(); }, [busy, result, panel]);
+  const ask = async (event: FormEvent) => {
+    event.preventDefault(); const asked = question.trim();
+    if (!asked) { setResult(null); setPanel("Enter a question first."); return; }
+    setBusy(true); setResult(null); setPanel("");
+    try { const response = await api<{ result: AiResult }>(`/api/courses/${course.id}/ai-help`, { method: "POST", body: JSON.stringify({ question: asked }) }); setResult(response.result); }
+    catch (e) { const failure = e as Error & { status?: number }; setPanel(failure.status === 404 ? "This course is not available." : failure.message); }
+    finally { setBusy(false); }
+  };
+  const label = result ? AI_LABELS[result.outcome] : null;
+  return <div><h2>AI help</h2>
+    <p className="ai-standing">Grounded in this course's PDFs. It gives direct answers about how the course runs, and study guidance — not answers to submit. Nothing here is posted to the forum.</p>
+    <form className="ai-ask" onSubmit={ask}>
+      <label htmlFor="ai-question">Your question</label>
+      <textarea id="ai-question" rows={4} value={question} maxLength={AI_MAX_QUESTION} aria-describedby="ai-counter" placeholder="Ask about this course…" disabled={busy || checking} onChange={event => setQuestion(event.target.value)} />
+      <div className="ai-ask-footer">
+        <small id="ai-counter" className={question.length >= 900 ? "ai-counter warn" : "ai-counter"}>{question.length} / {AI_MAX_QUESTION}</small>
+        <button className="primary" disabled={busy || checking || !question.trim()}>{busy ? "Asking…" : "Ask"}</button>
+      </div>
+    </form>
+    <div className="ai-result" aria-live="polite" aria-busy={busy}>
+      <h3 className="sr-only" tabIndex={-1} ref={resultHeading}>Result</h3>
+      {busy ? <p className="loading">Reading this course's material…</p>
+        : result && label ? <article className="ai-card">
+            <span className={`ai-badge ${label.tone}`}>{label.text}</span>
+            <p className="ai-answer">{result.answer}</p>
+            {result.citations.length > 0 && <div className="ai-sources"><h4>Sources</h4><ul className="rows">{result.citations.map(citation => <li key={`${citation.materialId}-${citation.page}`}><span>📄 {citation.filename} — p. {citation.page}</span><a href={citation.downloadPath}>Open</a></li>)}</ul></div>}
+          </article>
+        : panel ? <p className="ai-panel">{panel}</p> : null}
+    </div>
+  </div>;
+}
+
 function ManageMaterials({ course, reportError, reportNotice }: { course: Course; reportError: (message: string) => void; reportNotice: (message: string) => void }) {
   const [materials, setMaterials] = useState<Material[]>([]); const [maps, setMaps] = useState<MaterialMapState[]>([]); const [fallbackConfigured, setFallbackConfigured] = useState(false); const [file, setFile] = useState<File | null>(null); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [mapBusy, setMapBusy] = useState<string | null>(null);
   const load = useCallback(async () => { setLoading(true); try { const [materialResult, mapResult] = await Promise.all([api<{ materials: Material[] }>(`/api/courses/${course.id}/materials`), api<{ maps: MaterialMapState[]; fallbackConfigured: boolean }>(`/api/courses/${course.id}/knowledge-maps`)]); setMaterials(materialResult.materials); setMaps(mapResult.maps); setFallbackConfigured(mapResult.fallbackConfigured); } catch (e) { reportError((e as Error).message); } finally { setLoading(false); } }, [course.id, reportError]);

@@ -12,4 +12,5 @@ public final class ApiException extends RuntimeException {
   public static ApiException hidden() { return new ApiException(404, "not_found", "The requested resource is unavailable."); }
   public static ApiException conflict(String message) { return new ApiException(409, "conflict", message); }
   public static ApiException rateLimited(String message) { return new ApiException(429, "retry_limited", message); }
+  public static ApiException unavailable(String message) { return new ApiException(503, "service_unavailable", message); }
 }
