@@ -57,3 +57,33 @@ actionable P0–P3 findings were identified in the reviewed remediation. This
 conclusion covers code quality and specification-aligned static review only;
 it does not replace the engineer's recorded test results or independent
 tester verification.
+## CI request-limit regression follow-up — 2026-10-22
+
+Review type: Static review only; no tests were run.
+
+### Initial finding
+
+- **P2 — Documentation-evidence mismatch.** The completed-test report and
+  upload-boundary security review stated that a real loopback HTTP material
+  upload larger than 28 MiB received a 413 response. The CI-stable replacement
+  instead invokes the handler through a controlled `HttpExchange`, using a
+  request stream that fails if it is read. The evidence needed to distinguish
+  that handler-level declared-length coverage from real loopback coverage.
+
+### Remediation reviewed
+
+The updated test evidence now states that the controlled handler exchange
+supplies an authorized material-upload request with an over-limit declared
+`Content-Length` and a fail-on-read body stream. It records that this proves
+the safe 413 response is returned without consuming the body, parsing JSON,
+decoding Base64, or creating a material. It also records that the exactly
+28 MiB material upload remains real loopback coverage for the accepted
+boundary.
+
+### Final result
+
+The P2 finding is resolved. The updated wording in `test-report.md` and
+`workflow/security/platform-hardening-upload-boundary-review.md` matches the
+test's controlled handler assertions for the 413 status, safe error shape,
+body non-consumption, and no material mutation. No residual actionable
+code-quality findings were found in this follow-up scope.

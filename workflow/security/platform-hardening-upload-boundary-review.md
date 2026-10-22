@@ -9,7 +9,7 @@ limits before parsing and preserves the existing course-material upload path.
 
 `HttpApi` chooses the 28 MiB limit only for `POST /api/courses/{courseId}/materials`.
 Every other JSON route uses the 1 MiB limit. A supplied `Content-Length` over
-the applicable bound is rejected before the request stream is opened. Missing,
+the applicable bound is rejected before the request body is consumed. Missing,
 invalid, and understated values are not trusted: the reader accepts at most the
 limit plus one byte and returns a safe 413 response before JSON parsing or
 Base64 decoding.
@@ -31,7 +31,7 @@ by this change.
 | Case | Expected result | Evidence |
 | --- | --- | --- |
 | Direct oversized normal JSON request | 413 before JSON parsing or service mutation | `HttpApiIntegrationTest` sends a declared body over 1 MiB. |
-| Direct oversized material upload | 413 before parsing, Base64 decode, or material creation | `HttpApiIntegrationTest` sends a declared body over 28 MiB and verifies no material exists. |
+| Direct oversized material upload | 413 before body consumption, parsing, Base64 decode, or material creation | `HttpApiIntegrationTest` invokes `HttpApi.handle` with an authorized material-upload request whose declared `Content-Length` exceeds 28 MiB. Its body stream throws if read, proving the safe 413 response does not consume it. |
 | Missing or understated length | Handler returns only `request_too_large` and the exact safe message `The request is too large.`, parses no JSON, and leaves service state unchanged | `HttpApiIntegrationTest` invokes `HttpApi.handle` for both normal JSON and material uploads with absent and `0` lengths. It proves an oversized signup creates no user and oversized uploads create no material. |
 | Boundary-size normal JSON | Passes the transport reader and reaches normal validation | `HttpApiIntegrationTest` uses an exactly 1 MiB signup body and receives 422 validation rather than 413. |
 | Boundary-size material upload | Passes the transport reader and reaches existing upload processing | `HttpApiIntegrationTest` uses an exactly 28 MiB JSON payload containing a valid image-only PDF and receives 201. |

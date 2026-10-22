@@ -47,6 +47,22 @@ authorization and AI eligibility, and the relevant Java/PostgreSQL suites.
 The security review records safe error content, absence of parsing and
 mutation for oversized bodies, and the residual deployment and parser limits.
 
+## CI request-limit regression follow-up
+
+The latest test report records a passing re-verification of the GitHub CI
+failure caused by a live client streaming a declared-over-limit 28 MiB
+material-upload request. The revised declared-limit case now uses a controlled
+handler exchange with `Content-Length: 29,360,129` and a body stream that fails
+if read. Its recorded assertions show the handler returns the safe 413 response
+without reading the stream, parsing JSON, decoding Base64, or creating a
+material. The exactly 28 MiB accepted upload remains a real loopback test and
+passed.
+
+The code-quality follow-up records and resolves the evidence mismatch between
+the earlier documentation and this controlled handler-level test. The security
+review has been updated to describe the same coverage accurately. No unresolved
+defect or approval is recorded for this regression follow-up.
+
 ## Code-quality completion evidence
 
 The completed code-quality review records two P2 findings: incomplete
@@ -57,7 +73,7 @@ the final code-quality re-review reports no actionable P0–P3 findings.
 The independent test report records the resulting handler-level 413/no-mutation
 cases and the `resource_only` Knowledge Map rejection. This supplies the
 required quality-review, remediation, and independent re-verification sequence
-under `AGENTS.md`.
+under `AGENTS.md`, including the CI regression remediation.
 
 ## Handoff
 

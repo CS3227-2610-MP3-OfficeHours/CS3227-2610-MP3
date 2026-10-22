@@ -3,9 +3,9 @@ package edu.nus.tahelpdesk;
 import com.sun.net.httpserver.*;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
-import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -51,10 +51,6 @@ public final class HttpApiIntegrationTest {
     Domain.Course course = service.createCourse(staffId, "BOUNDARY", "Body boundary checks");
     handlerSizeBoundary();
 
-    String overUpload = "{" + "x".repeat(HttpApi.MAX_MATERIAL_UPLOAD_BODY_BYTES) + "}";
-    check(send("POST", "/api/courses/" + course.id() + "/materials", overUpload, cookie).statusCode() == 413, "declared upload body over limit is rejected");
-    check(service.listMaterials(staffId, course.id()).isEmpty(), "declared over-limit upload does not mutate materials");
-
     String uploadAtLimit = uploadBodyExactlyAtLimit();
     check(send("POST", "/api/courses/" + course.id() + "/materials", uploadAtLimit, cookie).statusCode() == 201, "upload body at limit reaches existing upload processing");
   }
@@ -73,6 +69,8 @@ public final class HttpApiIntegrationTest {
     assertHandler413(handler, "/api/auth/signup", "0", null, oversizedSignup, "normal JSON with understated Content-Length");
     expect(401, () -> service.authenticate("oversized.normal", "correct horse battery"), "handler-level oversized signup does not create a user");
     String materialPath = "/api/courses/" + course.id() + "/materials";
+    assertHandler413(handler, materialPath, Integer.toString(HttpApi.MAX_MATERIAL_UPLOAD_BODY_BYTES + 1), cookie,
+        new FailOnReadInputStream(), "declared material upload body over limit");
     byte[] oversizedUpload = new byte[HttpApi.MAX_MATERIAL_UPLOAD_BODY_BYTES + 1];
     assertHandler413(handler, materialPath, null, cookie, oversizedUpload, "material upload without Content-Length");
     assertHandler413(handler, materialPath, "0", cookie, oversizedUpload, "material upload with understated Content-Length");
@@ -85,6 +83,10 @@ public final class HttpApiIntegrationTest {
   }
 
   private static void assertHandler413(HttpApi handler, String path, String contentLength, String cookie, byte[] body, String name) throws Exception {
+    assertHandler413(handler, path, contentLength, cookie, new ByteArrayInputStream(body), name);
+  }
+
+  private static void assertHandler413(HttpApi handler, String path, String contentLength, String cookie, InputStream body, String name) throws Exception {
     TestExchange exchange = new TestExchange("POST", path, body, contentLength, cookie);
     handler.handle(exchange);
     check(exchange.status == 413, name + " returns HTTP 413");
@@ -116,11 +118,15 @@ public final class HttpApiIntegrationTest {
   private static void check(boolean value, String name) { if (!value) throw new AssertionError(name); }
   private static void expect(int status, ThrowingRunnable action, String name) throws Exception { try { action.run(); throw new AssertionError(name + " unexpectedly succeeded"); } catch (ApiException error) { if (error.status != status) throw new AssertionError(name + " returned " + error.status); } }
   @FunctionalInterface private interface ThrowingRunnable { void run() throws Exception; }
+  private static final class FailOnReadInputStream extends InputStream {
+    @Override public int read() { throw new AssertionError("declared oversized request body must not be read"); }
+  }
   private static final class TestExchange extends HttpExchange {
     private final Headers requestHeaders = new Headers(), responseHeaders = new Headers();
-    private final String method; private final URI uri; private final ByteArrayInputStream request;
+    private final String method; private final URI uri; private final InputStream request;
     private final ByteArrayOutputStream response = new ByteArrayOutputStream(); private int status = -1;
-    TestExchange(String method, String path, byte[] body, String contentLength, String cookie) { this.method=method;uri=URI.create(path);request=new ByteArrayInputStream(body);if(contentLength!=null)requestHeaders.set("Content-Length",contentLength);if(cookie!=null)requestHeaders.set("Cookie",cookie); }
+    TestExchange(String method, String path, byte[] body, String contentLength, String cookie) { this(method,path,new ByteArrayInputStream(body),contentLength,cookie); }
+    TestExchange(String method, String path, InputStream body, String contentLength, String cookie) { this.method=method;uri=URI.create(path);request=body;if(contentLength!=null)requestHeaders.set("Content-Length",contentLength);if(cookie!=null)requestHeaders.set("Cookie",cookie); }
     String response() { return response.toString(StandardCharsets.UTF_8); }
     @Override public Headers getRequestHeaders() { return requestHeaders; }
     @Override public Headers getResponseHeaders() { return responseHeaders; }
@@ -128,7 +134,7 @@ public final class HttpApiIntegrationTest {
     @Override public String getRequestMethod() { return method; }
     @Override public HttpContext getHttpContext() { return null; }
     @Override public void close() { }
-    @Override public ByteArrayInputStream getRequestBody() { return request; }
+    @Override public InputStream getRequestBody() { return request; }
     @Override public ByteArrayOutputStream getResponseBody() { return response; }
     @Override public void sendResponseHeaders(int code, long length) { status=code; }
     @Override public InetSocketAddress getRemoteAddress() { return new InetSocketAddress("127.0.0.1", 1); }
