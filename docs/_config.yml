@@ -1,8 +1,5 @@
 title: University TA Help Desk
 description: A course-scoped forum with a grounded AI assistant for students and AI material consolidation for staff.
 theme: jekyll-theme-cayman
-# jekyll-relative-links is enabled by default on GitHub Pages and rewrites the
-# .md links in index.md to their rendered .html equivalents, so the same links
-# work both on the site and when browsing the repository.
 exclude:
   - _config.yml

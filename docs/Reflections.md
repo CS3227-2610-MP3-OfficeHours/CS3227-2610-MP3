@@ -1,3 +1,8 @@
+---
+layout: default
+title: Reflections
+---
+
 # Reflections
 
 On AI Security, Spec-Driven Development, and Basic Multi-Agent SE.

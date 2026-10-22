@@ -1,3 +1,8 @@
+---
+layout: default
+title: User Guide
+---
+
 # User Guide
 
 The University TA Help Desk is a course-scoped forum with two AI features: one

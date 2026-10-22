@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ page.title | default: site.title | escape }}</title>
+    <meta name="description" content="{{ site.description | escape }}">
+    <style>
+      :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #243247; background: #f5f7fb; }
+      * { box-sizing: border-box; }
+      body { margin: 0; }
+      .site-header { padding: 1.4rem max(1.5rem, calc((100vw - 1120px) / 2)); color: white; background: #155eef; }
+      .site-header a { color: inherit; text-decoration: none; }
+      .site-header h1 { margin: 0; font-size: 1.4rem; }
+      .site-header p { margin: .35rem 0 0; color: #dbe7ff; }
+      .page-shell { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 2rem; max-width: 1120px; margin: 2rem auto; padding: 0 1.5rem; align-items: start; }
+      .sidebar { position: sticky; top: 1.5rem; padding: 1rem; background: white; border: 1px solid #dce3ee; border-radius: 10px; }
+      .sidebar h2 { margin: 0 0 .75rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .08em; color: #59677d; }
+      .sidebar ul { list-style: none; padding: 0; margin: 0; }
+      .sidebar li + li { margin-top: .3rem; }
+      .sidebar a { display: block; padding: .65rem .7rem; color: #34445c; text-decoration: none; border-radius: 6px; }
+      .sidebar a:hover, .sidebar a[aria-current="page"] { color: #1048bd; background: #edf3ff; }
+      main { min-width: 0; padding: 2rem 2.25rem; background: white; border: 1px solid #dce3ee; border-radius: 10px; line-height: 1.65; }
+      main > :first-child { margin-top: 0; }
+      main img { max-width: 100%; height: auto; }
+      main pre { overflow-x: auto; padding: 1rem; background: #f4f6fa; border-radius: 6px; }
+      main table { border-collapse: collapse; width: 100%; }
+      main th, main td { padding: .55rem; border: 1px solid #dce3ee; text-align: left; }
+      @media (max-width: 700px) { .page-shell { grid-template-columns: 1fr; gap: 1rem; margin: 1rem auto; padding: 0 1rem; } .sidebar { position: static; } .sidebar ul { display: flex; flex-wrap: wrap; gap: .25rem; } .sidebar li + li { margin-top: 0; } main { padding: 1.25rem; } }
+    </style>
+  </head>
+  <body>
+    <header class="site-header">
+      <h1><a href="{{ '/' | relative_url }}">{{ site.title | escape }}</a></h1>
+      <p>{{ site.description | escape }}</p>
+    </header>
+    <div class="page-shell">
+      <nav class="sidebar" aria-label="Documentation">
+        <h2>Documentation</h2>
+        <ul>
+          <li><a href="{{ '/UserGuide.html' | relative_url }}" {% if page.url contains 'UserGuide' %}aria-current="page"{% endif %}>User Guide</a></li>
+          <li><a href="{{ '/DeveloperGuide.html' | relative_url }}" {% if page.url contains 'DeveloperGuide' %}aria-current="page"{% endif %}>Developer Docs</a></li>
+          <li><a href="{{ '/Reflections.html' | relative_url }}" {% if page.url contains 'Reflections' %}aria-current="page"{% endif %}>Reflections</a></li>
+        </ul>
+      </nav>
+      <main>{{ content }}</main>
+    </div>
+  </body>
+</html>
