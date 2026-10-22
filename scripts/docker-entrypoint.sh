@@ -30,8 +30,18 @@ fi
 # Fail loudly and early rather than starting a half-configured production app.
 # AppConfig re-validates these; this check only produces a clearer log line.
 if [ "${TA_HELP_DESK_ENV:-}" = "production" ]; then
-  [ -n "${TA_HELP_DESK_DATABASE_URL:-}" ] || { echo "TA_HELP_DESK_DATABASE_URL is required in production." >&2; exit 1; }
-  [ -n "${TA_HELP_DESK_SESSION_SECRET:-}" ] || { echo "TA_HELP_DESK_SESSION_SECRET is required in production." >&2; exit 1; }
+  if [ -z "${TA_HELP_DESK_DATABASE_URL:-}" ]; then
+    echo "No database is configured, so this production container cannot start." >&2
+    echo "Set either DATABASE_URL (the platform's own postgres:// connection string," >&2
+    echo "which this entrypoint translates) or TA_HELP_DESK_DATABASE_URL together with" >&2
+    echo "TA_HELP_DESK_DATABASE_USER and TA_HELP_DESK_DATABASE_PASSWORD." >&2
+    echo "Neither DATABASE_URL nor TA_HELP_DESK_DATABASE_URL was present in this environment." >&2
+    exit 1
+  fi
+  if [ -z "${TA_HELP_DESK_SESSION_SECRET:-}" ]; then
+    echo "TA_HELP_DESK_SESSION_SECRET is required in production and must be at least 32 characters." >&2
+    exit 1
+  fi
 fi
 
 # No secret is echoed: only the non-sensitive shape of the configuration.
