@@ -104,13 +104,31 @@ public final class SoCLaaSClient {
   public StudentAiService.Provider studentProvider() {
     return new StudentAiService.Provider() {
       @Override public Result classify(String systemPrompt, String question) {
-        return chat(systemPrompt, "<student_question>\n" + question + "\n</student_question>", 8);
+        return chat(systemPrompt, "<student_question>\n" + question + "\n</student_question>", CLASSIFY_TOKENS);
       }
       @Override public Result compose(String systemPrompt, String userPrompt) {
-        return chat(systemPrompt, userPrompt, 600);
+        return chat(systemPrompt, userPrompt, COMPOSE_TOKENS);
       }
     };
   }
+
+  /**
+   * Token budgets for the student path.
+   *
+   * <p>These are deliberately far larger than the visible answer needs. The
+   * permitted chat models reason before answering and spend the completion
+   * budget on that reasoning first, returning it in a separate field and
+   * leaving {@code content} empty with {@code finish_reason: "length"} when
+   * the budget runs out. Measured against the gateway on 2026-10-22: a
+   * one-word classification spent about 1,500 characters of reasoning and
+   * produced no content at all below roughly 600 tokens, and a grounded
+   * answer over eight source pages used 984 completion tokens in total.
+   *
+   * <p>The adapter never falls back to the reasoning field, because that is
+   * the model's private working and must not reach a student.
+   */
+  private static final int CLASSIFY_TOKENS = 768;
+  private static final int COMPOSE_TOKENS = 2_000;
 
   /**
    * Sends source material as quoted data, never as authority to change policy.

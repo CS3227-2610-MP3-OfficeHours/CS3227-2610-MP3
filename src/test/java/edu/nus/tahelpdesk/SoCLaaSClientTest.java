@@ -260,7 +260,8 @@ public final class SoCLaaSClientTest {
     String classifyBody = gateway.lastChatBody();
     check(classifyBody.contains("when is the midterm"), "classification carries the question");
     check(classifyBody.contains("classifier instructions here"), "classification carries its system prompt");
-    check(classifyBody.contains("\"max_tokens\":8"), "classification is tightly bounded");
+    check(classifyBody.contains("\"max_tokens\":768"),
+        "classification leaves room for a reasoning model to reach its one-word answer");
     check(classifyBody.contains("\"temperature\":0"), "classification is deterministic");
     check(!classifyBody.contains("[SOURCE filename="), "classification carries no retrieved material");
 
@@ -270,7 +271,8 @@ public final class SoCLaaSClientTest {
     String composeBody = gateway.lastChatBody();
     check(composeBody.contains("composer instructions") && composeBody.contains("page text"),
         "composition carries its prompt and the source packet");
-    check(composeBody.contains("\"max_tokens\":600"), "composition has a bounded answer budget");
+    check(composeBody.contains("\"max_tokens\":2000"),
+        "composition leaves room for reasoning plus a grounded answer");
 
     record Case(int status, SoCLaaSClient.Failure expected, String name) {}
     for (Case scenario : List.of(
@@ -287,6 +289,14 @@ public final class SoCLaaSClientTest {
     gateway.reset(); gateway.chatBody = "nonsense";
     check(provider.compose("system", "user").failure() == SoCLaaSClient.Failure.rejected,
         "malformed student response is rejected");
+
+    gateway.reset();
+    gateway.chatBody = "{\"choices\":[{\"message\":{\"content\":\"\",\"reasoning\":\"private chain of thought\"},"
+        + "\"finish_reason\":\"length\"}]}";
+    SoCLaaSClient.Result starved = provider.compose("system", "user");
+    check(starved.failure() == SoCLaaSClient.Failure.rejected,
+        "a 200 whose content the reasoning budget consumed is a safe failure, not an answer");
+    check(starved.text() == null, "the model's reasoning field is never returned in place of content");
 
     gateway.reset(); gateway.transientRemaining = 1; gateway.chatBody = chat("ok (Week3.pdf, p. 1).");
     check(provider.compose("system", "user").succeeded() && gateway.chatBodies.size() == 2,
