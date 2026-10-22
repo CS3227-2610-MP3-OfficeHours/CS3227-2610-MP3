@@ -269,7 +269,7 @@ public class PlatformService {
   }
   private static boolean isUnicodeWhitespace(int cp) { return Character.isWhitespace(cp)||Character.isSpaceChar(cp)||cp==0x0085||cp==0xFEFF; }
   private static boolean isEmoji(int cp) { return (cp>=0x1F000&&cp<=0x1FAFF)||(cp>=0x2600&&cp<=0x27BF)||(cp>=0xFE00&&cp<=0xFE0F)||(cp>=0x1F1E6&&cp<=0x1F1FF); }
-  private static void validateTagColor(String color) { if(color==null||!Set.of("#1D4ED8","#166534","#854D0E","#B91C1C","#6D28D9","#0F766E").contains(color)) throw ApiException.validation("Choose a color from the available palette."); }
+  private static void validateTagColor(String color) { if(color==null||!Set.of("#1D4ED8","#166534","#854D0E","#6D28D9","#0F766E","#B91C1C","#0369A1","#A21CAF","#1F2937").contains(color)) throw ApiException.validation("Choose a color from the available palette."); }
   public User author(UUID id) { return requireUser(id); }
   public Role membershipRole(UUID courseId, UUID userId) { Membership value = membership(courseId, userId); return value == null ? null : value.role(); }
   private void requireDeletion(UUID actor, UUID courseId, UUID authorId) {

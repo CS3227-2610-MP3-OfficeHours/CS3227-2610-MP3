@@ -1,7 +1,7 @@
 # Course Forum Tags — UI Design
 
 Status: Approved
-Approval: Human product-owner approval recorded in chat, 2026-10-22 — General is immutable grey; up to seven tags including General; names are unique without regard to capitalization and reject emoji, control characters, and markup; colors use a fixed accessible palette; authors may change the tag on their own posts while editing.
+Approval: Human product-owner approval recorded in chat, 2026-10-22 — General is immutable grey; up to seven tags including General; names are unique without regard to capitalization and reject emoji, control characters, and markup; expand the fixed accessible custom-color palette to nine choices; authors may change the tag on their own posts while editing.
 Last handoff: Human product owner → UI designer, 2026-10-22 — define staff tag management, forum filtering, and create/edit post flows.
 
 ## Scope and visual language
@@ -18,9 +18,12 @@ Use the following fixed set for custom tags. Each color is the foreground text a
 | Blue | `#1D4ED8` | `#EFF6FF` | Custom |
 | Green | `#166534` | `#F0FDF4` | Custom |
 | Amber | `#854D0E` | `#FFFBEB` | Custom |
-| Red | `#B91C1C` | `#FEF2F2` | Custom |
 | Violet | `#6D28D9` | `#F5F3FF` | Custom |
 | Teal | `#0F766E` | `#F0FDFA` | Custom |
+| Red | `#B91C1C` | `#FEF2F2` | Custom |
+| Light Blue | `#0369A1` | `#F0F9FF` | Custom |
+| Magenta | `#A21CAF` | `#FDF4FF` | Custom |
+| Charcoal | `#1F2937` | `#F3F4F6` | Custom |
 
 The palette is a set of named choices, not a free-form color input. In the picker, each swatch is a labelled radio option with a visible color sample and color name; selected state is shown by a checkmark and outline, not hue alone. Keyboard arrows move among swatches, Space selects, and Tab exits the radio group.
 
@@ -30,7 +33,7 @@ Use a shared minimum height of 32 px for every tag pill, including forum filters
 
 ## Course Settings: Manage forum tags
 
-Add a `Forum tags` section to staff-only course Settings, below Course details and before the Danger zone. Keep the course shell and staff context visible. Students do not see this section, and server authorization remains decisive.
+Add a `Forum tags` section to staff-only course Settings, below Course details and before the Danger zone. Keep the course shell and staff context visible. Students do not see this section, and server authorization remains decisive. The expanded Add tag form spans the full settings content width, matching the Delete course danger-zone box. The Course name field and Save name action share one row beneath their label; the input takes the flexible width and the button sizes to its label plus horizontal padding.
 
 Show the current tags as rows in stable order: General first, then custom tags in creation order. Each row shows a colored tag preview, the tag name, and authorized actions. General has a `Default tag` helper label and no edit/delete controls. Custom rows expose `Edit` and `Delete` actions; do not hide them behind hover.
 
@@ -78,6 +81,6 @@ If the selected custom tag is deleted while the form is open, refresh the choice
 
 **Inputs:** `AGENTS.md`, `workflow/project-overview.md`, approved `workflow/features/forum-tags/spec.md`, `workflow/features/shared-course-forum/design.md`, and the `ui-consistency` skill.
 
-**Design decisions:** The custom palette is Blue, Green, Amber, Red, Violet, and Teal with the exact accessible foregrounds and tints specified above. General uses fixed grey. Pills have text, outline, and explicit selected-state cues; filters apply immediately and are single-select. Staff settings state the 7-total/6-custom cap. Authors may change the tag on their own posts while editing.
+**Design decisions:** The custom palette order is Blue, Green, Amber, Violet, Teal, Red, Light Blue, Magenta, and Charcoal with the exact accessible foregrounds and tints specified above. General uses fixed grey. Pills have text, outline, and explicit selected-state cues; filters apply immediately and are single-select. Staff settings state the 7-total/6-custom cap. Authors may change the tag on their own posts while editing.
 
 **Next owner:** Engineer implements the approved `forum-tags` spec and this design, then records implementation tasks and verification evidence.

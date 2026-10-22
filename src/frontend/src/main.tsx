@@ -68,7 +68,7 @@ function Thread({ user, course, post: initialPost, back, onDeleted, reportError,
 }
 
 const trimTagWhitespace=(value:string)=>value.replace(/^[\p{White_Space}\uFEFF]+|[\p{White_Space}\uFEFF]+$/gu, "");
-const TAG_PALETTE = [{name:"Blue",color:"#1D4ED8"},{name:"Green",color:"#166534"},{name:"Amber",color:"#854D0E"},{name:"Red",color:"#B91C1C"},{name:"Violet",color:"#6D28D9"},{name:"Teal",color:"#0F766E"}];
+const TAG_PALETTE = [{name:"Blue",color:"#1D4ED8"},{name:"Green",color:"#166534"},{name:"Amber",color:"#854D0E"},{name:"Violet",color:"#6D28D9"},{name:"Teal",color:"#0F766E"},{name:"Red",color:"#B91C1C"},{name:"Light Blue",color:"#0369A1"},{name:"Magenta",color:"#A21CAF"},{name:"Charcoal",color:"#1F2937"}];
 const tagColorName=(tag:ForumTag)=>tag.isDefault?"Grey":(TAG_PALETTE.find(item=>item.color===tag.color)?.name??"Color");
 function PostEditor({ course, post, onSaved, onCancel, reportError }: { course: Course; post?: Post; onSaved: (post: Post) => void; onCancel: () => void; reportError: (message: string) => void }) {
   const [title, setTitle] = useState(post?.title ?? ""); const [description, setDescription] = useState(post?.description ?? ""); const [tags,setTags]=useState<ForumTag[]>([]); const [tagId,setTagId]=useState(post?.tag.id??""); const tagIdRef=useRef(tagId); const [loading,setLoading]=useState(true); const [busy, setBusy] = useState(false); const [error,setError]=useState("");

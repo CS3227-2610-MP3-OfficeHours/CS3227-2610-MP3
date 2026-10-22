@@ -1,5 +1,5 @@
 Status: Approved
-Approval: Human product-owner request and clarifications recorded in chat, 2026-10-22 — General is immutable grey; 7 total tags; names unique case-insensitively; reject emoji, controls, and markup; fixed accessible palette; authors can retag their own posts while editing.
+Approval: Human product-owner request and clarifications recorded in chat, 2026-10-22 — General is immutable grey; 7 total tags; names unique case-insensitively; reject emoji, controls, and markup; expand the fixed accessible custom-color palette from six to nine; authors can retag their own posts while editing.
 Last handoff: Human product owner → UI designer, 2026-10-22 — design the approved forum tag settings, filter, and post create/edit flows.
 
 # Course Forum Tags
@@ -22,8 +22,8 @@ to a course; no tag or post metadata is shared across courses.
 4. Tag names are at most 20 characters and unique within the course regardless
    of capitalization. They cannot contain emoji, control characters, or
    markup.
-5. Custom tag colors come from a fixed set of accessible colors presented in a
-   grid picker. General remains grey and immutable.
+5. Custom tag colors come from a fixed set of nine accessible colors presented
+   in a grid picker. General remains grey and immutable.
 6. Under the Forum heading and its course-discussion subtitle, display each tag
    as an individual pill. A pill uses its tag's assigned color for its outline
    and text. Selecting a pill immediately filters posts to that tag; at most
