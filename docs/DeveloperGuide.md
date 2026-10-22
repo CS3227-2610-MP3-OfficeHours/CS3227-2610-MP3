@@ -325,7 +325,7 @@ cannot grind indefinitely.
 This gate did real work. `student-ai-help` went through three verification
 rounds and an acceptance audit; the first round returned eight defects, and the
 audit then refused to pass the feature on a point both the engineer and the
-tester had agreed on. Section 4 of `docs/Reflections.md` gives the details.
+tester had agreed on. Section 3.4 of `docs/Reflections.md` gives the details.
 
 ### Where it is weaker than it looks
 

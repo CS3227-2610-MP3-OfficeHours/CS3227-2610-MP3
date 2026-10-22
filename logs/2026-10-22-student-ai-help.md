@@ -114,7 +114,7 @@ executed anywhere. Two agents reclassifying it as release-blocking was not the
 authority to override an approved criterion.
 
 The escalation was correct and was not disputed. It is reflected on in
-`docs/Reflections.md` §3.3.
+`docs/Reflections.md` §3.4.
 
 ## 8. Closing the gap
 

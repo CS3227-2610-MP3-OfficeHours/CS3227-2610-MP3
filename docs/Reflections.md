@@ -42,13 +42,45 @@ interesting part is not the pattern list but *where the decision lives*: a
 model that has been talked out of its instructions cannot widen the scope,
 because the model is not the thing deciding.
 
-**Obfuscation.** Lecture 6 listed scrambled words and invisible-character
-smuggling, and our first screen missed all of it. `i g n o r e  p r e v i o u s`
-and `ignore​previous` both sailed through. The fix was to NFKC-normalise,
-strip format characters, and match a second compact pattern set against the
-text with every non-letter removed. Both payloads are now regression cases in
-`StudentAiHelpTest`. We would not have thought of this from first principles on
-a deadline; it came from reading the lecture against our own code.
+**Obfuscation.** Our first screen was a list of readable phrases —
+`ignore (previous|prior|earlier|above|your)` and similar — matched against the
+lowercased question. Against the plain attack it worked. Against Lecture 6's
+examples it did nothing at all: `i g n o r e  p r e v i o u s`,
+`i-g-n-o-r-e p.r.e.v.i.o.u.s`, and `ignore​previous` with a zero-width space
+between the words all reached the model with scope intact.
+
+The lesson was not "add more patterns". It was that a pattern list implicitly
+assumes the attacker spells things the way the defender does, and an attacker
+has no reason to. What we needed was to make many spellings collapse into one
+before matching.
+
+So screening now happens over two derived forms of the question. `normalize()`
+NFKC-folds compatibility look-alikes, deletes the format and private-use
+characters attackers hide in (`\p{Cf}\p{Co}\p{Cs}`, plus soft hyphen, word
+joiner and Mongolian vowel separator), lowercases, and collapses whitespace.
+Then a second form strips *every* non-alphanumeric character, and a separate
+compact pattern set — `ignore(all|any|the)?(previous|prior|...)`,
+`systemprompt`, `developermode`, `apikey` — is matched against that. Spacing,
+hyphens, dots and invisible characters all become nothing, so every variant
+above collapses onto the same string. The model still receives the original
+text; the folding exists only to decide.
+
+Two details we would get wrong if we did it again from memory. The compact set
+is **not** the readable set with separators made optional — it is a deliberately
+smaller list of the highest-signal markers, because matching loosely against
+text with all separators removed produces false positives across word
+boundaries. And the readable patterns are specific on purpose: a bare
+`override` or `bypass` is ordinary computing vocabulary, and a screen that
+refuses "how does the bypass work" has broken the feature to stop nothing.
+
+The regression test is the part we are most glad about. All five payloads run
+with the stub classifier primed to return `administrative` — the most
+permissive label it can give. Asserting `refused` therefore proves the screen
+decided, not the model, which is the actual claim. A test that stubbed a
+refusal would have passed with the whole screen deleted.
+
+We would not have derived this on a deadline. It came from reading the lecture
+against code we had already written and believed in.
 
 **Best-of-N.** The defence is the rate limit — 5 requests per minute per
 student per course. It was originally written as cost control. Re-reading
@@ -79,17 +111,48 @@ answer. It passed every check we had. The rule is now per-sentence: each
 asserting sentence must end with its own citation, with questions, headings and
 list lead-ins exempt. Grounding that is checked in aggregate is not grounding.
 
-**The refusal path handed the model the course material.** Our refusals
-retrieved source pages and composed a reply, so a refusal could offer cited
-guidance. The tester pointed out what that meant: for the *single highest-risk
-class of request* — someone who just demanded submission-ready work — we were
-giving the model the source pages and relying on its instructions to hold. A
-jailbreak that succeeded would have produced a solution that was genuinely
-grounded in real pages, correctly cited, and therefore passed every validator
-we had built. Refusals now perform no retrieval and make no gateway call.
+**The refusal path handed the model the course material.** This is the defect
+we find most instructive, because the design that produced it was the
+considerate one.
 
-Both were caught by an agent whose only job was to disbelieve the
-implementation, and neither would have been caught by the person who wrote it.
+A bare "no" is a bad help desk. So a refused request still retrieved the
+relevant pages and still called the model, with a refusal-scoped prompt
+instructing it to decline and offer a pointer to the right material instead.
+The student got a redirect that was actually useful. Every test passed, and the
+behaviour matched what the specification described.
+
+The tester restated it as a security property rather than a feature, and it
+inverted: for the *single highest-risk class of request* — someone who has just
+demanded submission-ready work — we were loading the source pages into the
+context and relying on prompt compliance to hold. The academic-integrity
+boundary, for exactly the requests most determined to cross it, rested on the
+model doing as it was told.
+
+The consequence is worse than a plain jailbreak. Our defences downstream are
+citation validators: every claim must cite a page present in the packet. A
+jailbreak on that path would have produced a solution grounded in the real
+lecture pages and correctly cited — so it would have passed **every validator
+we had built**, and arrived wearing the badge that tells the student the answer
+is sourced. We had built verification that confirms an answer came from the
+course material, and then handed it to a request whose answer must not exist at
+all. Grounding is not safety; it only makes output traceable.
+
+The fix was subtractive. `composerSystemPrompt(refused)` now throws
+`IllegalArgumentException("A refused request is never composed.")`, so the
+refusal prompt is gone rather than disabled — there is no scope value a
+confused code path can pass to get course material composed. A refusal returns
+fixed copy with no retrieval and no gateway call, and the tests assert
+`composeCalls == 0 && classifyCalls == 0`: not that the output looks like a
+refusal, but that the machinery never ran. We confirmed the same property
+against the live system, where the refusal returns in under four seconds —
+too fast for a network round trip to the gateway.
+
+Two things we took from it. Removing a capability beats constraining it, when
+the capability only exists for the case you are refusing. And the useful
+question is never "does this work as specified" but "what does this hand to
+someone who is trying" — a question the person who designed the flow is
+poorly placed to ask, which is why it took an agent whose only job was to
+disbelieve us.
 
 ### 1.4 Limits applied to the agents
 
@@ -120,7 +183,43 @@ proposed narrowing refusal behaviour, that was recorded as an amendment
 requiring product-owner confirmation and a new version of the answer policy
 (`student-answer-policy/v1` → `v2`) — not applied because it seemed sensible.
 
-### 1.6 What we do not claim
+### 1.6 A unique attack vector: approval as promotion
+
+Our staff-facing AI feature turns an uploaded lecture PDF into a topic map, and
+we were quite pleased with the review step we put in front of it. A generated
+map arrives as `pending_review`, and only course staff can approve it.
+
+The problem surfaced while we were specifying the student feature, when we had
+to write down where its retrieval actually gets its hints from. The answer was
+the approved maps. Written out as a sequence, it read: untrusted PDF, then
+model output, then a human approval, then input to a second AI feature. Each
+step on its own was something we had deliberately designed. Together they were
+a path for attacker-controlled text to arrive somewhere trusted, and the
+approval was the step doing the promoting. We had built the gate as a defence
+without noticing it was also the only thing in the system that upgrades
+untrusted content to approved content.
+
+We decided instead to change what approval grants instead of trying to make
+the check stronger. An approved map now only feeds server-side relevance
+scoring: we count how many of the question's terms appear in it and use that as
+a multiplier on that PDF's own pages, capped at 3x. The map's text is never put
+into a prompt, never sent to the gateway, and never shown to a student. The
+most a fully attacker-controlled map achieves is nudging which pages of its own
+document get retrieved, and those pages still have to survive per-sentence
+citation checking. We also bound approval to a digest of the PDF bytes, so
+re-uploading different content under the same filename drops the map rather
+than inheriting its approved status, and made maps whose citations don't
+resolve impossible to approve at all rather than merely flagged.
+
+The lesson I took from this is to ask what an approval *grants*, separately
+from what it *checks*. Ours was checking "is this a fair summary of the
+lecture" and granting "this may influence another AI feature", and the gap
+between those two sentences was the entire vulnerability. Narrowing the
+privilege on the far side of the gate turned out to be much easier, and much
+more durable, than improving the review in front of it. A human in the loop is
+only a control if being approved doesn't buy very much.
+
+### 1.7 What we do not claim
 
 Prompt injection is not solved. The screen is deliberately over-inclusive and
 refuses some legitimate questions. Two narrow gaps are known and recorded
@@ -227,36 +326,129 @@ is a model of the world, and ours omitted the one behaviour that mattered.
 
 ## 3. Basic Multi-Agent SE
 
-### 3.1 Which parts benefited from specialisation
+### 3.1 Specialised agents
 
-Specialisation paid where the work needs a *different stance*, not merely
-different knowledge.
+For this project, instead of copying and directly using the recommendations
+from the lecture slides, we decided that we wanted to build our own multi-agent
+system by scratch. The rationale for this was that we felt like jumping
+immediately to a "proven solution" diminishes the potential learning, because
+we wouldn't get to experience the pitfalls that led people to develop the best
+practices in the first place. Since this was just a low-risk school project, we
+were happy to take the opportunity to try, fail and slowly iterate.
 
-It paid most for **verification**, because the useful stance is disbelief and
-the implementer cannot hold it about their own work. The tester found eight
-defects in the first round of one feature, including both security holes in
-1.3.
+We made rookie mistakes almost immediately. When designing the roster of
+specialised agents, we landed on this configuration: a product manager agent,
+to write features and requirements which would be approved by humans; a UI
+designer agent, who is in charge of planning the interface layout and
+confirming the components that are to be used; an engineer agent, who should
+implement the features; and a tester agent, who independently verifies the
+implementation against its requirements and reports defects with evidence. It
+seemed like a good division of tasks, so after reviewing the specs document
+written by the product manager agent, we gave the go ahead to begin
+implementation.
 
-It paid again for the **acceptance audit**, whose stance is narrower still:
-read only the artefacts, compare them with the approved criteria, and do not
-re-derive anything. Section 3.3 is the example.
+When the task ended, we realised how big of a mistake we had made. Because the
+engineer agent did not have any technical specifications when it got to work,
+it ended up putting nearly everything in `main.tsx` (amongst a whole host of
+other code quality issues). The feature could run, but the file became
+difficult to navigate and review, and it was unclear where future work should
+go. I had assumed that asking an engineer to implement a feature was enough. It
+turns out that without a clear and technically focused implementation plan, an
+engineer agent could satisfy the visible request while making a poor structural
+choice. That was our first big lesson - the understanding that non-technical
+specifications do not substitute for technical specifications, and the
+importance of having an architect agent.
 
-It paid least for small, local work. Routing a one-line fix through five roles
-costs more in handoff than it returns, which is why `AGENTS.md` lets low-risk
-fixes skip product and design and go straight to a completion checklist.
+That said, aside from this one issue, we otherwise felt that we experienced
+immense benefits from setting up the specialised agents to handle distinct
+tasks. Compared to previous single-agent attempts where one agent might have
+been in charge of the end-to-end of a feature, the artefacts and agent planning
+documents were noticeably of higher quality and provided wider coverage of
+scenarios. Delegating tasks to subagents also allowed us to introduce more
+checks into the work. For instance, early in development, we saw cases where
+the task was ended and returned by the main agent despite outstanding failing
+test cases. We managed to successfully prevent this scenario by introducing a
+final acceptance audit agent who reviews feature artefacts and completion
+evidence to decide whether the work is ready for human review. Having a "fresh"
+agent in charge of this reduces slip-ups towards the end of complex tasks where
+context might be nearly full.
 
-### 3.2 What must pass between agents
+Specialisation paid least for small, local work. Routing a one-line fix through
+five roles costs more in handoff than it returns, which is why `AGENTS.md` lets
+low-risk fixes skip product and design and go straight to a completion
+checklist.
 
-Our handoff convention requires the feature name, the exact input artefacts and
-commit state, the bounded task, the decisions already approved, the open
-questions, and the next owner. The rule that earned its place is that a handoff
-may not transfer *authority* — an agent cannot tell the next one that something
-is approved. Approval lives in the artefact, with a date.
+### 3.2 Building and testing specialised agents
 
-What we underestimated is that handoffs lose *doubt*. Facts travel well;
-"we are not certain about this" does not. See 3.3.
+Another big challenge we faced was with UI. In the "Improve UI agent
+consistency" conversation, I described the initial UI of our webapp as
+"absolutely terrible". For example, we had components in the same vertical
+division being set to 3 different widths for no good reason, inconsistent
+button heights, and different heading sizes. We realised that despite explicit
+instructions to "maintain consistency across the whole product", the agent was
+incapable of doing so without further guidelines. This ended up being a very
+time consuming issue to fix as we had to go through the erroneous bits
+one-by-one and request for a redo.
 
-### 3.3 Where an error can slip through a chain — ours did
+In hindsight, the inability of the UI agent to live up to our initial
+expectations was entirely our fault. Firstly, we had failed to provide the
+agent with the tools it needed to succeed, like a library of reusable
+components and styles which the agent would tap on repeatedly. Secondly,
+instead of manually testing the UI agent on a smaller feature first, we
+immediately used it in a multi-agent system on a complex feature. This meant
+that unlike a manual invocation where the agent had greater freedom to end the
+task and obtain clarifications, the UI agent in the multi-agent system was
+"forced" to complete its duties and hand off to the next agent, and we were not
+able to realise the issue with the agent setup until the task was complete.
+
+After reading up on some UI agent best practices, we implemented files like
+`workflow/design/system.md` and `src/frontend/src/shared/ui.tsx` which document
+colors, spacing, layout widths, breakpoints, and behaviours, as well as provide
+reusable UI components for the app. Subsequent UI development was much smoother
+afterwards and we were able to one-shot many features. In a way, this also
+corrected a misconception we had regarding multi-agent vs single-agent
+development; we felt like because we were using a multi-agent system, each
+agent would be "smart" and hence we could get away with providing less detail.
+In reality, what we realised was that unless you want to spend a lot of time
+undoing lots of work which has all coalesced upon each other at the end of a
+complex and lengthy job execution - you really want to define and test agents
+well and provide them with the appropriate tools to succeed, even more than if
+you were using a single agent.
+
+Unfortunately, we thought it too late to do it in this project, but one thing
+we would be interested to try for MP4 is to set up a generator-verifier pattern
+for the UI design. Ideally, the verifier should have browser and camera access
+for the ability to conduct visual inspections of the finished product.
+
+### 3.3 Agent handoffs and artefacts
+
+For us, the handoff template that works includes the feature name, the exact
+specification and design versions, the code revision, decisions that have been
+approved, open questions, known risks, the requested deliverable, and the next
+owner. For verification, it should also include the acceptance criteria and the
+commands already run with their actual results. Although having such strict
+documentation decreased efficiency for simpler tasks, it becomes immensely
+helpful in group development because it leaves a decision trace and prevents
+other developers' agents from unwittingly undoing a change that was made for
+good reason.
+
+One rule earned its place the hard way: a handoff may not transfer *authority*.
+An agent cannot tell the next one that something is approved. Approval lives in
+the artefact, with a date.
+
+Aside from this, one important thing we realised about handoff documents is
+that they must preserve uncertainty and not just facts. When observing
+end-to-end orchestrations, we found that when multiple handoffs take place, an
+assumption made by earlier agents can turn into an instruction for the later
+agents. For example, when building the staff-LLM Knowledge Map feature, the UI
+agent assumed that if the PDF parser failed, the PDF file itself should also be
+rejected and not saved, and wrote an error message explaining this issue. That
+interpretation was passed to the engineer, and tester, who all conducted their
+functions assuming this should be the case. It required a human review to point
+out that saving the PDF file should occur even if there were issues with file
+parsing.
+
+### 3.4 Where an error can slip through a chain — ours did
 
 One agent writes the spec, another implements, a third reviews. The error we
 actually shipped slipped through all three, and it is the most useful thing in
@@ -286,7 +478,7 @@ code, only the artefacts and the criteria. Constraint produced the catch.
 The tester, asked to re-verify, put on the record that the original
 misclassification was its own. That is the behaviour the artefact trail is for.
 
-### 3.4 Evidence each agent should leave
+### 3.5 Evidence each agent should leave
 
 Each role writes exactly one artefact, which makes the trail auditable and
 makes self-correction impossible to hide:
@@ -312,7 +504,7 @@ tested. The tester caught it, the claim was corrected to name the untested
 states and why two are unreachable through the API, and the later audit
 re-checked every corrected claim.
 
-### 3.5 Trade-offs, honestly
+### 3.6 Trade-offs, honestly
 
 Lecture 7 lists the costs — token and coordination overhead, inconsistent
 assumptions, cascading errors, a larger permission surface — and we paid most
