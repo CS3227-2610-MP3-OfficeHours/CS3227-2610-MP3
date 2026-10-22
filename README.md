@@ -49,6 +49,28 @@ npm run dev
 The client intentionally contains only the shared React/TypeScript entry
 point; feature owners add approved student/staff views.
 
+To serve the built client from the Java server on a single origin, exactly as
+production does, build the client once and point the server at it:
+
+```sh
+cd src/frontend && npm ci && npm run build && cd ../..
+TA_HELP_DESK_STATIC_DIR=src/frontend/dist sh scripts/run-local.sh
+```
+
+With `TA_HELP_DESK_STATIC_DIR` unset the server serves the API only, which is
+the right mode when using the Vite dev server and its `/api` proxy.
+
+## Production deployment
+
+The production topology, the full environment-variable contract, the rollback
+procedure, and the peer-tester accounts are documented in
+`workflow/features/deployment/tasks.md`. In short: `Dockerfile` builds one
+image that serves the API and the client, `railway.json` configures the
+`/health` check, and `.github/workflows/deploy.yml` runs `scripts/test.sh` as a
+quality gate before deploying pushes to `master`. Production configuration is
+supplied entirely by deployment-managed variables; nothing is read from a
+committed file.
+
 Copy `.env.example` to `.env` only when changing local settings. Never commit a
 real session or application secret. Both Java launch scripts load this local
 file into their process environment when it exists. Staff Knowledge Map

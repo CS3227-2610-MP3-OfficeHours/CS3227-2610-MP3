@@ -1,0 +1,121 @@
+name: CI and production deploy
+
+# Team-managed quality gate and deployment. No Claude- or Codex-hosted build or
+# hosting environment is used: the build runs on GitHub-hosted runners and the
+# release runs on Railway, both owned by the team.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never let two deploys of master race each other.
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Server and client quality gate
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.12.0'
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Cache pinned third-party JARs
+        uses: actions/cache@v4
+        with:
+          path: .local-lib
+          key: local-lib-pdfbox-3.0.8-jdbc-42.7.8
+
+      # The authoritative server suite: in-memory platform authorization,
+      # the SoCLaaS adapter against a local stub gateway, and static serving.
+      - name: Run scripts/test.sh
+        run: sh scripts/test.sh
+
+      - name: Verify the PostgreSQL JDBC driver pin
+        run: sh scripts/ensure-jdbc.sh
+
+      - name: Install client dependencies
+        working-directory: src/frontend
+        run: npm ci --no-audit --no-fund
+
+      - name: Type-check and build the client
+        working-directory: src/frontend
+        run: npm run build
+
+      # A committed secret must fail the build, not reach production.
+      - name: Check the client bundle carries no server secret
+        run: |
+          if grep -rIlE 'jdbc:postgresql|SOCLAAS_[A-Z_]*API_KEY|TA_HELP_DESK_SESSION_SECRET|TA_HELP_DESK_DATABASE_PASSWORD' src/frontend/dist; then
+            echo "A server-only value appears in the client bundle." >&2
+            exit 1
+          fi
+          echo "Client bundle contains no server-only value."
+
+      - name: Check no .env file is tracked
+        run: |
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "A .env file is tracked in Git." >&2
+            exit 1
+          fi
+          echo "No .env file is tracked."
+
+  deploy:
+    name: Deploy to Railway production
+    needs: test
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Railway CLI
+        run: npm install -g @railway/cli@5.71.0
+
+      # RAILWAY_TOKEN is a project token scoped to the production environment.
+      # RAILWAY_SERVICE and RAILWAY_PROJECT_ID are repository variables, not
+      # secrets: they are identifiers, never credentials. `up` honours
+      # .gitignore, so no local .env or build output is ever uploaded.
+      - name: Deploy the image
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE: ${{ vars.RAILWAY_SERVICE }}
+          RAILWAY_PROJECT_ID: ${{ vars.RAILWAY_PROJECT_ID }}
+        run: |
+          railway up \
+            --project "$RAILWAY_PROJECT_ID" \
+            --environment production \
+            --service "$RAILWAY_SERVICE" \
+            --ci
+
+      # The deploy is only real if the live origin answers over HTTPS. Railway
+      # has already gated the release on railway.json's /health check; this is
+      # the externally reachable confirmation.
+      - name: Confirm the live health endpoint
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            body=$(curl -sS --fail --max-time 20 "$PRODUCTION_URL/health") && break || true
+            echo "Attempt $attempt failed; retrying in 15s."
+            sleep 15
+          done
+          echo "$body"
+          echo "$body" | grep -q '"status":"ok"' || { echo "Live health check failed." >&2; exit 1; }
