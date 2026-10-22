@@ -88,7 +88,8 @@ fall back to the reasoning field — it is the model's private working.
 
 Three verification rounds and an acceptance audit had passed a feature that
 could not answer a single question, because all of them stubbed the gateway.
-This is reflected on in `docs/Reflections.md` §2.4 and §3.6.
+The cause and the measured budgets are recorded in
+`workflow/features/student-ai-help/tasks.md`.
 
 ## 6. End-to-end verification
 

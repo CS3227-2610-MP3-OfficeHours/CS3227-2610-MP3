@@ -113,8 +113,7 @@ malformed-output and provider-failure cases"*, and that coverage was not
 executed anywhere. Two agents reclassifying it as release-blocking was not the
 authority to override an approved criterion.
 
-The escalation was correct and was not disputed. It is reflected on in
-`docs/Reflections.md` §3.4.
+The escalation was correct and was not disputed.
 
 ## 8. Closing the gap
 

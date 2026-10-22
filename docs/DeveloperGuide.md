@@ -243,7 +243,8 @@ Every substantial feature has a directory under `workflow/features/<name>/`:
 
 Larger decisions get a normative record under `workflow/specs/`, which the
 feature `spec.md` adopts. `spec.md` states that the record governs where the
-two differ — a precedence rule that mattered in practice, see Reflections.
+two differ — a precedence rule that mattered in practice when an approved
+design and an approved specification disagreed.
 
 ### The gates
 
@@ -330,7 +331,8 @@ cannot grind indefinitely.
 This gate did real work. `student-ai-help` went through three verification
 rounds and an acceptance audit; the first round returned eight defects, and the
 audit then refused to pass the feature on a point both the engineer and the
-tester had agreed on. Section 3.4 of `docs/Reflections.md` gives the details.
+tester had agreed on. `workflow/features/student-ai-help/completion-review.md`
+holds the auditor's reasoning.
 
 ### Where it is weaker than it looks
 
