@@ -11,6 +11,22 @@ if [ -n "${PORT:-}" ] && [ "${TA_HELP_DESK_PORT:-8080}" = "8080" ]; then
   export TA_HELP_DESK_PORT
 fi
 
+# Most managed Postgres add-ons (Render, Fly, Koyeb, Heroku) publish a single
+# DATABASE_URL of the form postgres://user:password@host:port/database?params.
+# Translate it into the application's own three-variable contract when that has
+# not been set explicitly, so the image is not tied to one platform. Anything
+# after the '@' is preserved verbatim, including a required ?sslmode=.
+if [ -z "${TA_HELP_DESK_DATABASE_URL:-}" ] && [ -n "${DATABASE_URL:-}" ]; then
+  _creds=${DATABASE_URL#*://}
+  _userpass=${_creds%%@*}
+  _location=${_creds#*@}
+  TA_HELP_DESK_DATABASE_USER=${_userpass%%:*}
+  TA_HELP_DESK_DATABASE_PASSWORD=${_userpass#*:}
+  TA_HELP_DESK_DATABASE_URL="jdbc:postgresql://${_location}"
+  export TA_HELP_DESK_DATABASE_USER TA_HELP_DESK_DATABASE_PASSWORD TA_HELP_DESK_DATABASE_URL
+  unset _creds _userpass _location
+fi
+
 # Fail loudly and early rather than starting a half-configured production app.
 # AppConfig re-validates these; this check only produces a clearer log line.
 if [ "${TA_HELP_DESK_ENV:-}" = "production" ]; then
