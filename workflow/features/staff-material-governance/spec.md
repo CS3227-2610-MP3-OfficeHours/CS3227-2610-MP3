@@ -1,8 +1,8 @@
 # Staff Material Upload, Processing, Review, and Consolidation
 
 Status: Approved for Stage 4A and the Stage 4B Knowledge Map scope; Stage 4B awaits Stage 3 completion
-Approval: Human product-owner approval recorded in chat, 2026-10-20 through 2026-10-22 — approved non-AI material management, normal SoCLaaS use without published numeric limits, one manually updated Knowledge Map per course, authorized-staff display of unverified generated maps, the approved staff dashboard refinements, and approval/status-control behavior (2026-10-22).
-Last handoff: Human product owner → UI designer, 2026-10-22 — update the Knowledge Map review/status controls for the approved interaction changes in the latest addendum; next owner is engineer after design alignment.
+Approval: Human product-owner approval recorded in chat, 2026-10-20 through 2026-10-22 — approved non-AI material management, normal SoCLaaS use without published numeric limits, one manually updated Knowledge Map per course, authorized-staff display of unverified generated maps, approved dashboard/review controls, and the upload visibility and dismissible extraction-failure behavior in the 2026-10-22 addendum.
+Last handoff: Product manager → UI designer, 2026-10-22 — align the approved upload visibility and extraction-failure dismissal requirements with the existing Resources and Knowledge Map design; next owner is engineer after design alignment.
 
 ## Purpose and outcome
 
@@ -54,10 +54,12 @@ course boundary.
     safe error message and a manual retry action. The application guardrail is
     at most three manual retry-job submissions per minute per staff member per
     course; it is an application control, not a claimed provider quota.
-12. Enrolled students may browse and download active course PDFs through a
-    dedicated Resources section in that course forum. Every list, metadata,
-    download, and citation target remains server-authorized for current course
-    membership.
+12. Enrolled students may browse and download successfully uploaded course
+    PDFs through a dedicated Resources section in that course forum, including
+    PDFs whose text extraction is still processing or has failed. A PDF is
+    absent only when the upload itself was rejected/failed or the material was
+    deleted. Every list, metadata, download, and citation target remains
+    server-authorized for current course membership.
 
 ## Scope
 
@@ -74,8 +76,9 @@ course boundary.
   uploads, reads, deletes, processing, Knowledge Map operations, and retrieval eligibility.
 - Clear validation, capacity, processing-failure, AI-unavailable, and
   permission-denied states.
-- An enrolled-student Resources section that lists and serves only active PDFs
-  for the requested course after server-side membership authorization.
+- An enrolled-student Resources section that lists and serves each successfully
+  uploaded, non-deleted PDF for the requested course after server-side
+  membership authorization, regardless of extraction state.
 
 ## Non-goals
 
@@ -101,7 +104,7 @@ course boundary.
 | Authorized course staff | Organize course source materials using AI. | Manually generate/update the one Knowledge Map from all active PDFs, receive a reviewable map or an explicit safe failure, and inspect source PDF/page provenance. |
 | Authorized course staff | Control whether the map is used. | Explicitly approve or reject the generated map; only an approved, current map may guide student-AI retrieval. |
 | Enrolled student | Receive grounded help without private material leakage. | Access only the later student-AI behavior permitted by that feature; never upload/delete materials or bypass course authorization. |
-| Enrolled student | Read course resources. | Browse and download active PDFs only through the Resources section of a course where the server confirms current enrollment. |
+| Enrolled student | Read course resources. | Browse and download successfully uploaded, non-deleted PDFs, including processing and extraction-failed files, only through Resources for a course where the server confirms current enrollment. |
 
 ## Functional behavior and states
 
@@ -117,10 +120,11 @@ course boundary.
   staff to distinguish at least validation rejection, accepted/processing,
   active, failed processing, and deleted/unavailable. Exact internal job states
   are an engineering detail.
-- “Active” means a staff-uploaded source PDF eligible for future student-AI
-  retrieval only when the later student request also passes course
-  authorization. Processing failure must not silently make unprocessed or
-  partial material retrieval-eligible.
+- “Active” means a successfully uploaded, processed source PDF eligible for
+  future student-AI retrieval only when the later student request also passes
+  course authorization. A successfully uploaded PDF remains a course resource
+  while processing or after extraction failure, but processing failure must
+  not silently make unprocessed or partial material retrieval-eligible.
 - At the active-PDF limit, the next upload is rejected with an explicit
   capacity error. Deleting an active source frees capacity once the deletion
   takes effect.
@@ -135,8 +139,11 @@ course boundary.
   PDF. The product offers no in-place replacement, retained revision, or
   restoration behavior.
 - Enrolled students see a dedicated Resources section in their authorized
-  course forum. It lists and downloads only active course PDFs. A deleted,
-  failed, still-processing, or cross-course PDF must not be listed or served.
+  course forum. It lists and downloads every successfully uploaded,
+  non-deleted course PDF, whether processing, active, or extraction-failed. A
+  rejected/failed upload, deleted, or cross-course PDF must not be listed or
+  served. Extraction failure affects AI/retrieval eligibility, not whether the
+  stored source PDF is a resource.
 
 ### Processing and provenance
 
@@ -147,8 +154,15 @@ course boundary.
   retrieval/consolidation excerpts with the original course, source PDF, and
   page number. The system must not expose one course's source/provenance to an
   actor not authorized for that course.
-- A malformed/unsupported result, extraction failure, or service failure moves
-  the material/job to a visible failed state with safe, non-sensitive feedback.
+- An upload validation failure creates no resource row. After successful upload
+  acceptance, a malformed/unsupported extraction result or processing/service
+  failure moves the material/job to a visible failed state with safe,
+  non-sensitive feedback while preserving the source PDF in Resources.
+- For each PDF whose extraction failed, the authorized staff-facing Knowledge
+  Map area shows a dismissible failure notice using exactly: “This PDF could
+  not be parsed. Try uploading it again.” Dismissing the notice hides that
+  notice from the current rendered view only; it does not alter material/job
+  status or delete the PDF, and it may reappear after the view is reloaded.
 - A failed processing or Knowledge Map job exposes a safe, non-sensitive error
   message and a manual retry control to authorized course staff. The server
   permits no more than three such retry-job submissions per minute for the
@@ -194,7 +208,7 @@ returned or any job is started.
 
 | Action | Student | Authorized course staff | Required server check |
 | --- | --- | --- | --- |
-| Browse/download active course PDFs in Resources | Allowed when enrolled | Allowed | Actor is a current student member or course staff for the course; source is active/current/not deleted; server authorizes every list/download. |
+| Browse/download successfully uploaded course PDFs in Resources | Allowed when enrolled | Allowed | Actor is a current student member or course staff for the course; upload was accepted and source is not deleted; server authorizes every list/download. Extraction state does not gate resource access. |
 | List/read material metadata or source for staff operations | Denied | Allowed | Actor is course staff for the course. |
 | Upload source PDF | Denied | Allowed | Actor is authorized course staff; course is in scope; file and capacity validation pass. |
 | Delete source PDF | Denied | Allowed | Actor is authorized course staff; material belongs to course. |
@@ -314,10 +328,13 @@ or substitute provider.
 6. A failed or still-processing source PDF is never silently treated as active
    retrieval material. Staff can distinguish processing, active, failed, and
    deleted/unavailable states without exposed internal secrets/paths.
-7. An enrolled student can browse and download only active PDFs through the
-   dedicated Resources section of a course where they are currently enrolled.
-   A non-member, removed student, unrelated-course actor, or guessed direct
-   URL is denied without protected metadata, content, or storage locations.
+7. An enrolled student can browse and download every successfully uploaded,
+   non-deleted PDF through the dedicated Resources section of a course where
+   they are currently enrolled, including processing and extraction-failed
+   PDFs. A failed/rejected upload creates no resource row. Extraction state
+   does not make a PDF retrieval-eligible for AI. A non-member, removed
+   student, unrelated-course actor, or guessed direct URL is denied without
+   protected metadata, content, or storage locations.
 8. A staff actor replaces material only by deleting it then uploading a new
    PDF; no in-place replace or old revision remains available. An authorized
    staff member sees a safe error and can manually retry a failed job, while
@@ -602,3 +619,58 @@ approval and authorization criteria.
 **Next owner:** UI designer updates `design.md` to align the approval and status
 controls with this approved follow-up; engineer implements after design
 alignment.
+
+## Approved upload visibility and extraction-notice follow-up (2026-10-22)
+
+The human product owner approved this change in the request dated 2026-10-22.
+It clarifies the boundary between upload acceptance and asynchronous extraction:
+an accepted file is a stored course resource regardless of extraction outcome.
+It does not change the rule that failed or partial extraction is ineligible for
+AI retrieval. Upload validation/request failure means no successfully uploaded
+resource exists. Course membership authorization remains required for every
+resource list and download.
+
+- Resources lists and serves every successfully uploaded, non-deleted source
+  PDF, whether its extraction is processing, active, or failed. A processing
+  or extraction-failed status must not hide a stored PDF from authorized
+  course members. Only a failed/rejected upload or deletion removes it from
+  Resources.
+- Knowledge Map displays one extraction-failure notice per affected PDF. Each
+  notice has a dismiss control that removes that individual notice from the
+  current rendered view without changing server-side status or deleting the
+  resource. Notices may return after the view is reloaded while the failure
+  remains. Dismissing one notice must not dismiss other PDFs' notices.
+- Replace the timeout-specific notice with the exact user-facing text:
+  “This PDF could not be parsed. Try uploading it again.”
+
+### Additional acceptance criteria
+
+27. After an upload request is accepted and a material record/source PDF is
+    stored, authorized enrolled students and course staff can see and download
+    it in Resources while extraction is processing and after extraction fails.
+    A failed/rejected upload creates no resource row. Deleted files remain
+    unavailable, and resource access remains server-authorized per course.
+28. A successfully uploaded extraction-failed PDF remains downloadable but is
+    not treated as active/processed input for AI retrieval or Knowledge Map
+    generation. Its failure does not change the upload acceptance outcome.
+29. Each extraction-failure notice in Knowledge Map shows exactly “This PDF
+    could not be parsed. Try uploading it again.” A dismiss control removes
+    only its associated notice from the current view, leaves the file and
+    server-side status unchanged, and does not dismiss another PDF's notice.
+    Reloading may show a notice again if that material remains failed.
+30. Resource list/download requests continue to reject unauthorized, removed,
+    and cross-course actors regardless of extraction state; hiding a row in
+    client UI is not an authorization control.
+
+**Verification evidence and handoff:** Engineer records separate evidence for
+upload rejection versus accepted-then-extraction-failed outcomes; list and
+download visibility during processing and failure; continued exclusion of
+unprocessed material from AI; per-notice dismissal behavior; exact message
+text; reload behavior; and server-side course authorization. Independent
+testing verifies criteria 27–30. The UI designer updates `design.md` to specify
+the resource-row behavior and the notice/dismiss interaction before
+engineering implements this user-facing change.
+
+**Next owner:** UI designer, using this approved addendum and the current
+`design.md`; then engineer after design alignment. No unresolved product
+decision blocks that handoff.

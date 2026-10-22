@@ -222,3 +222,37 @@ sample remains unverified and unapprovable.
 **Next owner:** Tester, to complete browser checks for approval busy/success/
 error behavior, rejection confirmation, and load/action refresh. Acceptance
 auditor follows only after a passing test report.
+
+## Approved Resources visibility and extraction-notice addendum — criteria 27–30
+
+### Implemented
+
+- Authorized Resources listing now includes every accepted material except
+  deleted records, including `processing` and `failed` extraction states.
+- Authorized resource downloads now serve every accepted non-deleted material
+  regardless of processing state. Existing course-member checks still run
+  before listing or downloading, and deleted records remain hidden.
+- AI and Knowledge Map eligibility continue to use only active, processed
+  materials; this Resources change does not change those source filters.
+- Knowledge Map material panels show the exact approved extraction-failure
+  message and a per-PDF **Dismiss** button with a filename-specific accessible
+  name. Dismissal is component-local and removes only the notice; the material
+  panel and failed status badge remain. Reloading the view resets dismissal.
+- Resources row presentation remains download-only for students and retains the
+  existing staff-only delete action.
+
+### Verification
+
+- Tests and build were not run in this implementation handoff. Independent
+  verification should cover accepted processing/failed rows and downloads,
+  rejected uploads, deletion, authorization, AI input eligibility, exact copy,
+  per-PDF dismissal isolation, and notice reappearance after reload.
+- `git diff --check` — PASS for the implementation files.
+- Static code-quality review — PASS; no actionable findings in the changed
+  application files.
+- Static resource visibility security review is recorded in
+  `workflow/security/resource-processing-state-visibility-review.md`; its
+  authorization and AI-eligibility scenarios remain to be independently tested.
+
+**Next owner:** Tester, for independent verification of criteria 27–30. No
+commit was created.

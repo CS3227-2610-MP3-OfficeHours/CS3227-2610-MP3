@@ -122,10 +122,10 @@ public class PlatformService {
     return materials.values().stream().filter(m -> m.courseId().equals(courseId) && m.status() != MaterialStatus.deleted)
         .sorted(Comparator.comparing(Material::createdAt).reversed()).map(PlatformService::copyMaterial).toList();
   }
-  /** Resource list deliberately exposes only active source PDFs to current course members. */
+  /** Resource list exposes every accepted, non-deleted PDF to current course members. */
   public List<Material> listResources(UUID actor, UUID courseId) {
     requireCourseMember(actor, courseId);
-    return materials.values().stream().filter(m -> m.courseId().equals(courseId) && (m.status() == MaterialStatus.active || m.status() == MaterialStatus.resource_only))
+    return materials.values().stream().filter(m -> m.courseId().equals(courseId) && m.status() != MaterialStatus.deleted)
         .sorted(Comparator.comparing(Material::createdAt).reversed()).map(PlatformService::copyMaterial).toList();
   }
   public synchronized Material uploadMaterial(UUID actor, UUID courseId, String filename, String contentType, byte[] content) {
@@ -187,7 +187,7 @@ public class PlatformService {
   public synchronized void rejectKnowledgeMap(UUID actor, UUID courseId, UUID materialId) { requireCourseStaff(actor, courseId); requireReviewableKnowledgeMap(courseId, materialId); candidates.remove(materialId); changed(); }
   public Material downloadResource(UUID actor, UUID courseId, UUID materialId) {
     requireCourseMember(actor, courseId); Material material = requireMaterialInCourse(courseId, materialId);
-    if (material.status() != MaterialStatus.active && material.status() != MaterialStatus.resource_only) throw ApiException.hidden();
+    if (material.status() == MaterialStatus.deleted) throw ApiException.hidden();
     return copyMaterial(material);
   }
   public List<Course> listCourses(UUID actor) {

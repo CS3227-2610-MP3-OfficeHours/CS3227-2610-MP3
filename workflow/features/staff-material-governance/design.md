@@ -1,14 +1,14 @@
 # Staff Material Governance — UI Design
 
 Status: Approved for Stage 4A and the Stage 4B Knowledge Map UI; Stage 4B awaits Stage 3 completion
-Approval: Human product-owner approval recorded in chat, 2026-10-20 through 2026-10-22 — approved Resources upload/deletion, the Knowledge Map-only workspace, one manually updated Knowledge Map per course, and staff-only display of returned unverified maps (2026-10-22).
-Last handoff: UI designer → engineer, 2026-10-22 — align the approved immediate-approval and status-refresh control changes (criteria 23–26); next owner is engineer for implementation after Stage 3 completion.
+Approval: Human product-owner approval recorded in chat, 2026-10-20 through 2026-10-22 — approved Resources upload/deletion, the Knowledge Map-only workspace, one manually updated Knowledge Map per course, staff-only display of returned unverified maps, and the accepted-PDF visibility/dismissible extraction-failure notice addendum (2026-10-22).
+Last handoff: UI designer → engineer, 2026-10-22 — align the approved Resources visibility and per-PDF extraction-failure dismissal changes (criteria 27–30); next owner is engineer for implementation. No product or interaction choices remain open for this addendum.
 
 ## Scope and access boundary
 
 This design implements the confirmed material-governance requirements in `spec.md`, product-foundation decisions, and the `ui-consistency` skill. It does not design student AI help or enable AI before the shared service and AI scope are approved.
 
-Only assigned course staff see material management, job, consolidation, and review controls. Enrolled students see active PDFs only in Resources. A non-member, removed student, or unassigned staff member receives a generic access-denied/not-found result with no course, file, or job metadata. The server authorizes every route, list, download, mutation, and job.
+Only assigned course staff see material management, job, consolidation, and review controls. Enrolled students see every successfully uploaded, non-deleted PDF in Resources, regardless of extraction state. A non-member, removed student, or unassigned staff member receives a generic access-denied/not-found result with no course, file, or job metadata. The server authorizes every route, list, download, mutation, and job.
 
 ## Shared blue-and-white system and pattern additions
 
@@ -18,8 +18,9 @@ Use the shared application shell: white/light-neutral surfaces, dark readable te
 | --- | --- |
 | `CourseTabs` | **Forum**, **Resources**, and **Knowledge Map** only for assigned staff. Preserve the active tab in URL/history. |
 | `UploadOverlay` | Centered, dismissible dialog containing the existing PDF upload form and its validation/capacity guidance; staff-only entry point lives in Resources. |
-| `ResourceRow` | Responsive PDF row with safe filename, **Download PDF**, and a staff-only red **Delete file** button immediately to its right; never exposes storage URLs. |
+| `ResourceRow` | Responsive PDF row for every accepted, non-deleted PDF with safe filename, **Download PDF**, and a staff-only red **Delete file** button immediately to its right; never exposes storage URLs. Extraction state does not control row visibility. |
 | `StatusBadge` | Written label plus icon/shape for Processing, Active, Failed, Pending review, Approved, Rejected. |
+| `ExtractionFailureNotice` | Per-PDF staff notice with the approved parse-failure copy and a dismiss control. Dismissal is local to the current rendered view and to that one material. |
 | `KnowledgeMapPanel` | Labelled **AI-generated Knowledge Map — review required**, visibly distinct from human forum posts; textual citations remain in map content, with no separate Source support link list beneath it. |
 | `DestructiveConfirmDialog` | Cancel-first focused dialog with exact object name and irreversible consequence. |
 | `JobFailureNotice` | Safe error, retry eligibility, and retry action; no stack trace, secret, private path, or protected content. |
@@ -30,20 +31,20 @@ Use one primary blue action per region; outlined/text secondary actions; persist
 
 | Viewer | Visible tabs | Material destination |
 | --- | --- | --- |
-| Enrolled student | Forum, Resources | Active-PDF Resources list |
+| Enrolled student | Forum, Resources | Accepted, non-deleted PDF Resources list |
 | Assigned course staff | Forum, Resources, Knowledge Map | Knowledge Map; Resources remains selectable |
 | Non-member / removed student / unassigned staff | No course shell | Generic denied/not-found page |
 
-`Resources` lists active PDFs for authorized members. Each row has **Download PDF**; assigned staff additionally see the red **Delete file** action immediately to its right. Assigned staff also see a top-right **Upload file** action that opens `UploadOverlay`. The staff **Knowledge Map** workspace contains only the existing **Course Knowledge Map** section and its generation, status, and review operations. It has no separate material lifecycle list. Staff-only processing/AI data and deletion controls cannot appear in student navigation or markup.
+`Resources` lists every successfully uploaded, non-deleted PDF for authorized members, including files still processing or with failed text extraction. Each row has **Download PDF**; assigned staff additionally see the red **Delete file** action immediately to its right. A rejected/failed upload has no resource row, and a deleted file is absent. Assigned staff also see a top-right **Upload file** action that opens `UploadOverlay`. The staff **Knowledge Map** workspace contains only the existing **Course Knowledge Map** section and its generation, status, and review operations. It has no separate material lifecycle list. Staff-only processing/AI data and deletion controls cannot appear in student navigation or markup.
 
 ## Screens and interactions
 
 ### Resources — enrolled students and assigned staff
 
-Show heading **Resources**, help text “Course PDFs shared by staff,” and a semantic list of `ResourceRow`s. Assigned staff see **Upload file** aligned at the top right of the heading region; students never see the button. Activating it opens a centered modal dialog with the existing PDF upload form and guidance. The member-facing list does not display job status, uploader identity, internal metadata, or AI eligibility. Assigned staff see a red **Delete file** button immediately to the right of **Download PDF** for each listed active PDF; students see no delete action. The server authorizes the list, every download, and every deletion.
+Show heading **Resources**, help text “Course PDFs shared by staff,” and a semantic list of `ResourceRow`s. Assigned staff see **Upload file** aligned at the top right of the heading region; students never see the button. Activating it opens a centered modal dialog with the existing PDF upload form and guidance. The member-facing list does not display job status, uploader identity, internal metadata, or AI eligibility. Include every accepted, non-deleted PDF whether extraction is processing, active, or failed. Assigned staff see a red **Delete file** button immediately to the right of **Download PDF** for each listed PDF; students see no delete action. The server authorizes the list, every download, and every deletion. Extraction failure does not reverse upload acceptance or affect resource availability; only upload rejection/failure or deletion removes the PDF from this list.
 
 - A download has button-local loading feedback; failed downloads announce an adjacent **Try download again** action.
-- Display active PDFs only. Pagination is unnecessary at the confirmed maximum of 20.
+- Display all successfully uploaded, non-deleted PDFs, regardless of extraction state. Pagination is unnecessary at the confirmed maximum of 20 active source PDFs; resource visibility must not be capped by that retrieval-eligibility count.
 - Upload dialog: label it **Upload course PDF**, provide a visible close button, and use the existing labelled file input, selected filename/size, remove-selection action, and **Upload PDF** submit control. Include “PDF only · maximum 20 MB · maximum 100 pages · up to 20 active PDFs per course.” Keep all existing validation and capacity messages inline with an error summary. On accepted upload, announce that processing has started, close the dialog, clear its selection, and refresh the staff list in Knowledge Map; on rejection or request failure keep the dialog and selection open so staff can recover.
 - The dialog is opened only for authorized course staff. Direct upload authorization and PDF validation are server-enforced regardless of whether the button is visible.
 - Empty state: “No resources have been shared yet. Check back after course staff upload a PDF.” Students see no upload action; authorized staff retain **Upload file** in the heading region.
@@ -72,13 +73,31 @@ Show only the **Course Knowledge Map** section in the staff Knowledge Map tab. R
 
 #### Staff delete action in Resources
 
-The red **Delete file** button follows **Download PDF** in each active resource
-row and is rendered only for assigned staff. It opens a destructive
-confirmation with the exact filename and irreversible consequence. Cancel
+The red **Delete file** button follows **Download PDF** in each accepted,
+non-deleted resource row and is rendered only for assigned staff. It opens a
+destructive confirmation with the exact filename and irreversible consequence. Cancel
 preserves the row; successful deletion removes it from Resources and new AI
 retrieval/generation inputs, announces success, and refreshes the list. Failure
 preserves the row and reports the safe server error. The server remains the
 authorization boundary. Student resource rows remain download-only.
+
+#### Extraction failure in the Knowledge Map workspace
+
+For each material whose text extraction has failed, show one
+`ExtractionFailureNotice` in that PDF's existing Knowledge Map material panel.
+The notice body is exactly: “This PDF could not be parsed. Try uploading it
+again.” Replace timeout-specific, generic “Skipped” extraction-failure copy
+with this text. Include a visible **Dismiss** button with an accessible name
+that identifies the file (for example, “Dismiss extraction failure notice for
+`<filename>`”). Activating it removes only that PDF's notice from the current
+rendered view; it does not hide the material panel, remove the PDF from
+Resources, change the server-side processing status, or dismiss another PDF's
+notice. The notice may appear again after reloading the view while the PDF
+remains extraction-failed. Keep the failed status badge and any separate map
+job failure/retry controls governed by their existing state; dismissal applies
+only to this extraction-failure notice. The file remains unavailable as
+processed input for AI retrieval and Knowledge Map generation until successful
+processing, while remaining downloadable in Resources.
 
 ### Course Knowledge Map — assigned course staff only
 
@@ -120,7 +139,7 @@ an unverified map.
 
 ## Accessibility, responsive behaviour, and states
 
-All tabs, file input, actions, dialogs, and citations are keyboard usable. Use correct tab semantics/`aria-current`, concise polite live status, assertive alerts only when action is needed, focus-trapped Escape-close upload dialogs, and focus restoration to **Upload file**. Approval uses the existing button's accessible name while pending and exposes its progress state to assistive technology; success/error feedback is announced without moving focus. Rejection confirmation supports keyboard focus, cancellation, and return focus to its trigger. Returned-map scrolling is keyboard accessible and does not contain or hide the review actions. Icons have text labels/tooltips. Render untrusted filename/content as text, never HTML.
+All tabs, file input, actions, dialogs, and citations are keyboard usable. Use correct tab semantics/`aria-current`, concise polite live status, assertive alerts only when action is needed, focus-trapped Escape-close upload dialogs, and focus restoration to **Upload file**. Each extraction-failure notice's **Dismiss** control is a labelled keyboard-operable button with a visible focus indicator and a target of at least 44 px; removing a notice does not move focus unexpectedly or change its PDF panel. Approval uses the existing button's accessible name while pending and exposes its progress state to assistive technology; success/error feedback is announced without moving focus. Rejection confirmation supports keyboard focus, cancellation, and return focus to its trigger. Returned-map scrolling is keyboard accessible and does not contain or hide the review actions. Icons have text labels/tooltips. Render untrusted filename/content as text, never HTML.
 
 Below 768 px, use labelled menu/scrollable tabs, stacked content, labelled row groups instead of dense tables, and stacked dialog actions with Cancel first in reading order. Keep the primary approval and Reject controls at least 44 px high and reachable without horizontal scrolling; let the heading actions wrap or stack beneath the heading. Maintain WCAG AA contrast for text, controls, focus, and badges.
 
@@ -140,4 +159,4 @@ Below 768 px, use labelled menu/scrollable tabs, stacked content, labelled row g
 2. Confirm whether Resources should expose upload date/uploader. This defaults to filename + download only.
 3. Confirm final authorized citation behaviour when a PDF page cannot be deep-linked; this design preserves page number without assuming a custom viewer.
 
-**Next owner:** Engineer implements the approved review-control follow-up (criteria 23–26) after design alignment and Stage 3 completion, preserving server-side authorization, verifier authority, and student citations. @ziyang may reuse `CourseTabs`, `ResourceRow`, `StatusBadge`, and Resources in student flows but must not show staff controls.
+**Next owner:** Engineer implements the approved Resources visibility and extraction-failure dismissal addendum (criteria 27–30), preserving server-side course authorization and keeping extraction-failed files outside processed AI inputs. Reuse `CourseTabs`, `ResourceRow`, `StatusBadge`, and `ExtractionFailureNotice`; student Resources remain download-only and never expose staff controls.
