@@ -1,8 +1,8 @@
 # Staff Material Upload, Processing, Review, and Consolidation
 
 Status: Approved for Stage 4A and the Stage 4B Knowledge Map scope; Stage 4B awaits Stage 3 completion
-Approval: Human product-owner approval recorded in chat, 2026-10-20 through 2026-10-22 — approved non-AI material management, normal SoCLaaS use without published numeric limits, one manually updated Knowledge Map per course, authorized-staff display of unverified generated maps, and the approved staff dashboard refinements (2026-10-22).
-Last handoff: Human product owner → UI designer, 2026-10-22 — refine Resources deletion and the Knowledge Map workspace per the approved follow-up below; next owner is engineer after design alignment.
+Approval: Human product-owner approval recorded in chat, 2026-10-20 through 2026-10-22 — approved non-AI material management, normal SoCLaaS use without published numeric limits, one manually updated Knowledge Map per course, authorized-staff display of unverified generated maps, the approved staff dashboard refinements, and approval/status-control behavior (2026-10-22).
+Last handoff: Human product owner → UI designer, 2026-10-22 — update the Knowledge Map review/status controls for the approved interaction changes in the latest addendum; next owner is engineer after design alignment.
 
 ## Purpose and outcome
 
@@ -542,3 +542,63 @@ rules remain unchanged.
 The engineer records focused role-based Resources checks, delete behavior,
 Knowledge Map section/content checks, and the existing map verification and
 authorization test results.
+
+## Approved Knowledge Map review-control follow-up (2026-10-22)
+
+The human product owner approved the following interaction changes in the
+request dated 2026-10-22. They change only staff-facing controls and do not
+change map eligibility, server authorization, source currentness, verification,
+or student citation requirements.
+
+- Activating **Approve for student AI navigation** on an eligible pending-review
+  map submits the approval immediately. Remove the approval confirmation
+  message/dialog.
+- Remove the **Refresh Map status** button. Load current map/status data on
+  normal page load and refresh it after completed actions, including approval,
+  rejection, and generation/update, so the page does not require a separate
+  manual status-refresh control.
+- Keep the rejection confirmation. Preserve visible busy/in-progress,
+  success, and safe error feedback for actions. Do not show success or update
+  the displayed decision as accepted until the server confirms it; on failure,
+  retain the prior state and show the safe error.
+- Keep **Approve for student AI navigation** unavailable for unverified maps.
+  The server must continue to enforce authorized course-staff identity,
+  same-course scope, map currentness/source snapshot, and verified source/page
+  support before accepting approval. Client controls do not establish
+  eligibility.
+- Approval enables student AI navigation only under the existing rules:
+  student requests remain course-authorized and answers still cite original
+  PDF filenames and pages; the map remains supporting navigation material.
+
+### Additional acceptance criteria
+
+23. For an eligible verified pending-review map, one activation of
+    **Approve for student AI navigation** sends the approval action immediately
+    without an approval confirmation message/dialog. A busy state prevents
+    duplicate submission; success is shown only after server confirmation,
+    followed by refreshed map/status data and the recorded decision summary.
+24. The **Refresh Map status** button is absent. Initial page load obtains
+    current map/status data, and completion of generation/update, approval, or
+    rejection refreshes the displayed data without that control.
+25. Rejection still requires its confirmation. Approval remains hidden or
+    disabled for an unverified map. Direct or manipulated requests from an
+    unauthorized actor, for another course, for a stale/non-current map, or
+    for a map with unverified source/page support are rejected server-side;
+    no client state can make such a map eligible. Failures retain the prior
+    decision/status and display safe error feedback.
+26. Student AI navigation continues to require current course authorization
+    and an approved, current, verified map; student-facing answers using the map
+    cite original PDF filenames and pages.
+
+**Verification evidence and handoff:** Engineering records focused UI checks
+for immediate approval (including busy, success, and error states), continued
+rejection confirmation, absence of the status-refresh button, data refresh on
+page load and after actions, and disabled approval for unverified maps. Server
+tests verify authorization, course scope, currentness, and source/page
+verification remain enforced, and student-facing citation behavior remains
+unchanged. Independent testing covers criteria 23–26 with the existing map
+approval and authorization criteria.
+
+**Next owner:** UI designer updates `design.md` to align the approval and status
+controls with this approved follow-up; engineer implements after design
+alignment.

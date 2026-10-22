@@ -188,3 +188,37 @@ sample remains unverified and unapprovable.
   and SoCLaaS client suites); `git diff --check` — PASS.
 - **Next owner:** Tester, to verify staff/student Resources actions, deletion,
   Knowledge Map layout and map controls, plus existing authorization tests.
+
+## Approved review-control follow-up — criteria 23–26
+
+### Implemented
+
+- Approval now submits immediately from the eligible verified pending-review
+  action. The existing request busy state disables duplicate review actions;
+  success remains server-confirmed and followed by a Knowledge Map reload, and
+  failures report the safe API error without an optimistic decision.
+- Rejection keeps its existing confirmation message and request behavior.
+- Removed the **Refresh map status** control and its component callback. Initial
+  loading, job polling, and reloads after generation, approval, and rejection
+  remain in place.
+- No server, authorization, map-verification, or student citation behavior was
+  changed. Unverified candidates still do not render an approval action.
+
+### Local verification
+
+- `PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm run build` in
+  `src/frontend` — PASS (`tsc -b && vite build`), 2026-10-22.
+- `git diff --check` — PASS, 2026-10-22.
+- `sh scripts/test.sh` — PASS with local loopback permission: Platform
+  integration, HTTP API integration, and SoCLaaS client tests all passed,
+  2026-10-22.
+- Independent code-quality review of `src/frontend/src/main.tsx` — PASS; no
+  actionable findings after remediation (2026-10-22).
+- Independent tester report covers criteria 23–26 and records **Needs changes**
+  solely because browser interaction evidence is unavailable; the report
+  documents the successful full-suite rerun. Acceptance audit is therefore not
+  yet applicable.
+
+**Next owner:** Tester, to complete browser checks for approval busy/success/
+error behavior, rejection confirmation, and load/action refresh. Acceptance
+auditor follows only after a passing test report.

@@ -593,3 +593,56 @@ workspace files. `git diff --check` passes.
 Upload-error recovery and rendered long-map keyboard scrolling have not been
 exercised in the browser. The implementation and build evidence are present,
 but the report does not claim those interactions were observed.
+
+## Approval and status-control follow-up verification — criteria 23–26 — 2026-10-22
+
+**Scope:** Independent focused verification of the approved immediate map
+approval and removal of the manual status-refresh control. Reviewed the current
+specification, approved design, implementation, and existing integration-test
+coverage. No implementation changes were made.
+
+### Checks and actual results
+
+| Check | Result |
+| --- | --- |
+| `PATH=/Users/xp/.nvm/versions/node/v24.22.0/bin:$PATH npm run build` from `src/frontend` | **PASS**. `tsc -b` and Vite production build completed; Vite transformed 28 modules. |
+| `sh scripts/test.sh` | **PARTIAL**. `PlatformIntegrationTest` passed, including map approval authorization and source/page verification cases. `HttpApiIntegrationTest` could not start because the sandbox denied binding its local fake HTTP server (`java.net.SocketException: Operation not permitted`); the script stopped before `SoCLaaSClientTest`. |
+| `git diff --check` | **PASS** at time of check. |
+| Interactive browser check | **NOT RUN**. Browser inventory showed no open tabs; no app/dev server was running. Running the application would require starting/configuring services, outside this no-setup verification. |
+| Frontend interaction tests | **NOT AVAILABLE**. No frontend test/spec files or test script are present in `src/frontend/package.json`. |
+
+### Criteria coverage
+
+| Criterion | Evidence and result |
+| --- | --- |
+| 23 — immediate approval | **Source-reviewed; browser interaction unverified.** `review()` prompts only when `decision === "reject"`; activating approval proceeds directly to the course/material-scoped POST. `setMapBusy(materialId)` disables both review buttons and changes their label to “Saving review…” while the request is pending. It only reports approval after the POST resolves, calls `load()` for refreshed status, and retains the prior UI plus safe error reporting when the POST fails. No approval confirmation string/dialog remains in the review path. A rendered click, duplicate-click, and failure-state check was unavailable. |
+| 24 — status refresh control and refresh behavior | **Source-reviewed; browser interaction unverified.** `KnowledgeMapWorkspace` calls `load()` in its initial effect and after generate/update and review actions. Its existing poll refreshes queued/generating jobs. `KnowledgeMapsByPdf` no longer accepts or renders an `onRefresh` control; its heading action area still contains **Generate all eligible maps**. A case-insensitive source search found no “Refresh Map status” control. |
+| 25 — rejection confirmation and eligibility/server rules | **Partial pass.** The rejection confirmation text and cancel-before-submit branch remain. `MaterialMap` only renders approval when `candidate.verificationMessage` is absent; `busy` disables both review controls. The passing `PlatformIntegrationTest` covers authorized approval, student/cross-course denials, and rejection of unverified/missing, foreign, stale, and invalid-page citation candidates. This run could not reach HTTP API tests because local socket binding was denied. UI confirmation/cancel behavior and safe failure feedback were source-reviewed, not exercised in a browser. |
+| 26 — student authorization and original-PDF citations | **Contract-preservation review only.** This change only alters staff review controls. The map section continues to say student answers cite original PDFs and pages, and the server-side approval/currentness/source verification logic was not changed. Existing platform tests confirm approval is blocked for invalid or stale source/page support and unauthorized actors. This repository has no student AI answer-generation test or flow in the inspected test set, so this run does not independently demonstrate answer citation output or student retrieval authorization end to end. |
+
+### Assessment and handoff
+
+**Focused verdict: Needs changes for independent UI verification.** Source review
+and the production build support the requested interaction, and the passing
+platform suite supports the server-side approval boundary. There is no
+source-level defect identified for criteria 23–25. However, the acceptance
+criteria explicitly call for interactive checks of approval busy/success/error
+states, rejection confirmation, and load/action refresh, and those could not be
+exercised without starting the app and its backend. Criterion 26 also remains
+an unchanged contract rather than end-to-end student answer evidence. Re-run
+the focused checks in a running test app/browser and capture student citation
+behavior when the student AI flow is available before treating this follow-up as
+independently verified end to end.
+
+### Orchestrator test execution follow-up — 2026-10-22
+
+The orchestrator reran `sh scripts/test.sh` with approved loopback access after
+the sandbox restriction encountered during my run. **Platform integration,
+HTTP API integration, and SoCLaaS client tests all passed.** This supersedes the
+partial execution result above for the full test script; its description is
+retained as the actual result of my independent run.
+
+**Updated focused verdict: Needs changes for browser interaction evidence
+only.** The full automated suite now passes. The remaining verification gap is
+that immediate approval, its busy/success/error states, rejection confirmation,
+and page/action refresh behavior were not exercised in a running browser.

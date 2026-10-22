@@ -2,7 +2,7 @@
 
 Status: Approved for Stage 4A and the Stage 4B Knowledge Map UI; Stage 4B awaits Stage 3 completion
 Approval: Human product-owner approval recorded in chat, 2026-10-20 through 2026-10-22 — approved Resources upload/deletion, the Knowledge Map-only workspace, one manually updated Knowledge Map per course, and staff-only display of returned unverified maps (2026-10-22).
-Last handoff: Human product owner → UI designer, 2026-10-22 — refine staff Resources deletion and the Knowledge Map workspace per approved criteria 21–22; next owner is engineer.
+Last handoff: UI designer → engineer, 2026-10-22 — align the approved immediate-approval and status-refresh control changes (criteria 23–26); next owner is engineer for implementation after Stage 3 completion.
 
 ## Scope and access boundary
 
@@ -92,7 +92,11 @@ The `KnowledgeMapPanel` includes a generated label; Current, Stale, Generating, 
 
 Bound the returned map content region to `max-height: 70vh`; when it exceeds that height, scroll vertically inside the region. Keep status, verification notice, and review controls outside the scrolling content region so they remain available. Give the scroll region an accessible name and keyboard focusability (`tabindex="0"` where required by the implementation), preserve a visible focus indicator, and ensure keyboard users can scroll through the entire map without focus being trapped or lost. On short screens, the 70vh cap still applies and the review actions remain reachable in the surrounding page layout.
 
-For Pending review, display primary **Approve for student AI navigation** and destructive secondary **Reject**. Approval confirmation: “Approve this Knowledge Map? It may help student AI find relevant course resources, but responses must still cite original active PDFs and pages.” Rejection confirmation: “Reject this Knowledge Map? It will not guide student AI retrieval.” A successful immediate decision becomes read-only summary. No reversal/re-review is designed because the spec does not authorize it.
+For an eligible, verified map in Pending review, display primary **Approve for student AI navigation** and destructive secondary **Reject**. Activating **Approve for student AI navigation** submits immediately without a confirmation dialog. While the request is pending, disable both review actions and show a clear progress label on the approval action; do not optimistically change the status or claim approval. On server-confirmed success, announce the result and refresh the map/status data, then show the recorded reviewer/time and read-only decision summary. On failure, retain the prior status and actions and show the safe error with recovery guidance. Approval remains unavailable for an unverified map.
+
+**Reject** retains its existing confirmation dialog: “Reject this unapproved generated map? This removes only the candidate; any approved map stays unchanged.” The dialog places Cancel first, supports keyboard interaction and visible focus, and restores focus to **Reject** when cancelled. Successful rejection is shown only after server confirmation and refreshed map/status data; failure leaves the prior state visible with a safe error.
+
+Do not show a **Refresh Map status** button. The workspace loads current status on normal page load and refreshes the map/status after generation/update and review actions. Keep **Generate all** in the Knowledge Map section heading's action area, aligned with that heading; removing the manual status control does not remove generation. A successful approval permits navigation only under existing server rules: student answers continue to cite original active PDFs and pages. No reversal/re-review is designed because the spec does not authorize it.
 
 When the provider returns map content but source support cannot be verified for
 every active PDF, retain the content in `KnowledgeMapPanel` for assigned staff
@@ -116,9 +120,9 @@ an unverified map.
 
 ## Accessibility, responsive behaviour, and states
 
-All tabs, file input, actions, dialogs, and citations are keyboard usable. Use correct tab semantics/`aria-current`, concise polite live status, assertive alerts only when action is needed, focus-trapped Escape-close upload dialogs, and focus restoration to **Upload file**. Returned-map scrolling is keyboard accessible and does not contain or hide the review actions. Icons have text labels/tooltips. Render untrusted filename/content as text, never HTML.
+All tabs, file input, actions, dialogs, and citations are keyboard usable. Use correct tab semantics/`aria-current`, concise polite live status, assertive alerts only when action is needed, focus-trapped Escape-close upload dialogs, and focus restoration to **Upload file**. Approval uses the existing button's accessible name while pending and exposes its progress state to assistive technology; success/error feedback is announced without moving focus. Rejection confirmation supports keyboard focus, cancellation, and return focus to its trigger. Returned-map scrolling is keyboard accessible and does not contain or hide the review actions. Icons have text labels/tooltips. Render untrusted filename/content as text, never HTML.
 
-Below 768 px, use labelled menu/scrollable tabs, stacked content, labelled row groups instead of dense tables, and stacked dialog actions with Cancel first in reading order. Maintain WCAG AA contrast for text, controls, focus, and badges.
+Below 768 px, use labelled menu/scrollable tabs, stacked content, labelled row groups instead of dense tables, and stacked dialog actions with Cancel first in reading order. Keep the primary approval and Reject controls at least 44 px high and reachable without horizontal scrolling; let the heading actions wrap or stack beneath the heading. Maintain WCAG AA contrast for text, controls, focus, and badges.
 
 | State | Required response |
 | --- | --- |
@@ -136,4 +140,4 @@ Below 768 px, use labelled menu/scrollable tabs, stacked content, labelled row g
 2. Confirm whether Resources should expose upload date/uploader. This defaults to filename + download only.
 3. Confirm final authorized citation behaviour when a PDF page cannot be deep-linked; this design preserves page number without assuming a custom viewer.
 
-**Next owner:** Engineer implements the approved addendum after design review and Stage 3 completion, preserving server-side authorization and verifier authority. @ziyang may reuse `CourseTabs`, `ResourceRow`, `StatusBadge`, and Resources in student flows but must not show staff controls.
+**Next owner:** Engineer implements the approved review-control follow-up (criteria 23–26) after design alignment and Stage 3 completion, preserving server-side authorization, verifier authority, and student citations. @ziyang may reuse `CourseTabs`, `ResourceRow`, `StatusBadge`, and Resources in student flows but must not show staff controls.
