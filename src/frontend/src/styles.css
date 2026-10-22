@@ -403,6 +403,15 @@ textarea {
   border-top: 1px solid #d9e1ee;
 }
 
+.generate-all-maps {
+  width: 12rem;
+  max-width: 100%;
+}
+
+.knowledge-map > .section-heading > .actions {
+  align-self: center;
+}
+
 .map-panel {
   margin-top: 1rem;
   padding: 1rem;

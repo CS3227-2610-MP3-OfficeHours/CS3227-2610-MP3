@@ -23,7 +23,7 @@ Each active text-ready PDF shows an adjacent/expandable map region:
 3. the approved map (if present), status and reviewer/time;
 4. a clearly labelled **AI-generated — staff review required** candidate (if
    present), its source citations and verification warning; and
-5. contextual actions: **Generate map** or **Update map**, then candidate
+5. contextual actions: **Generate map** or **Regenerate**, then candidate
    **Approve for student AI navigation** or **Reject** when allowed.
 
 Generate/Update is disabled only for the PDF with an active job. A bulk run

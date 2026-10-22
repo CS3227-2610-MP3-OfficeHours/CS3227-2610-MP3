@@ -165,7 +165,7 @@ Revise **Manage materials** rather than adding another course tab:
    a request fails. Resource-only/processing/failed PDFs are reported as
    skipped with a reason.
 3. Each text-ready PDF has **Generate map** when no candidate/job exists and
-   **Update map** otherwise. The action starts only that source's job. An
+   **Regenerate** otherwise. The action starts only that source's job. An
    in-progress row disables only its own generation action; bulk progress does
    not make unrelated staff controls disappear.
 4. A row shows, in order: latest job progress/failure; approved-map status and

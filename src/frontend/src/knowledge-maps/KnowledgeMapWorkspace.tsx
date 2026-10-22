@@ -177,7 +177,7 @@ function KnowledgeMapsByPdf({
         </div>
         <div className="actions">
           <button
-            className="primary"
+            className="primary generate-all-maps"
             onClick={() => onGenerate()}
             disabled={busy !== null || !eligible.length}
           >
@@ -239,7 +239,7 @@ function MaterialMap({
         </div>
         {material.status === "active" && (
           <button onClick={onGenerate} disabled={busy || running}>
-            {candidate || approved ? "Update map" : "Generate map"}
+            {candidate || approved ? "Regenerate" : "Generate map"}
           </button>
         )}
       </div>
