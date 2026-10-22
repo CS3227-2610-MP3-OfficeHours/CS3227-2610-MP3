@@ -9,8 +9,9 @@ public final class Domain {
   public record User(UUID id, String username, Role role, String passwordHash, Instant createdAt) {}
   public record Course(UUID id, String code, String name, UUID createdBy, Instant createdAt) {}
   public record Membership(UUID courseId, UUID userId, Role role) {}
+  public record ForumTag(UUID id, UUID courseId, String name, String color, boolean isDefault, Instant createdAt) {}
   public record Post(UUID id, UUID courseId, UUID authorId, String title, String description,
-                     Instant createdAt, Instant updatedAt) {}
+                     UUID tagId, Instant createdAt, Instant updatedAt) {}
   public record Comment(UUID id, UUID postId, UUID authorId, String body,
                         Instant createdAt, Instant updatedAt) {}
   /** Source PDFs are deliberately distinct from future generated AI artefacts. */

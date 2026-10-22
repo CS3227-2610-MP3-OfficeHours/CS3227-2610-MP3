@@ -32,11 +32,13 @@ Use a calm blue-and-white educational interface: white/light-neutral surfaces, d
 | `ConfirmDialog` | Focus trap, stated irreversible consequence, Cancel default focus, danger-labelled confirm, and focus restoration. |
 | `MarkdownEditor` / `MarkdownPreview` | Textarea, supported-Markdown hint, and Preview using the same sanitized renderer as published content. No supplied HTML/script/event runs. |
 | `MemberList` | Separate labelled Course staff/Students lists, username and role badge. Only student rows offer removal. |
-| `ForumPostCard` / `CommentCard` | Username/role badge, timestamp, sanitized text, and only permitted actions. No credentials/private profile data. |
+| `ForumPostCard` / `CommentCard` | Username, a compact yellow `STAFF` badge immediately beside staff authors, timestamp, sanitized text, and only permitted actions. No credentials/private profile data. |
 | `ResourceEntryCard` | Course-scoped Resources label/link only; no material-management controls. |
 | `RoleChoiceCard` | A whole-card, semantic button for choosing `Student` or `Staff` before authentication. It includes a short path description and visible keyboard focus; it is not a radio group because choosing it navigates to the corresponding route. |
 
 These are reusable patterns for later designs. Human discussions are labelled **Discussion** and must not be styled as AI output.
+
+The staff role badge uses the shared UI system's yellow fill (`#FEF08A`) and dark-brown text (`#713F12`) everywhere it appears, including the account header, `Staff access` course context, member lists, and staff-authored forum posts or replies. Keep the explicit `Staff`/`STAFF` label; color is supplementary.
 
 ## Information architecture and authorization visibility
 

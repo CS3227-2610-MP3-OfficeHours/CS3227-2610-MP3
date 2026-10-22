@@ -14,6 +14,7 @@ javac --release 25 --add-modules jdk.httpserver -cp "$PDFBOX_JAR" -d build/class
 javac --release 25 --add-modules jdk.httpserver -cp "build/classes$SEP$PDFBOX_JAR" -d build/test-classes $(find src/test/java -name '*.java')
 TEST_CP="build/classes$SEP""build/test-classes$SEP$PDFBOX_JAR"
 java --add-modules jdk.httpserver -cp "$TEST_CP" edu.nus.tahelpdesk.PlatformIntegrationTest
+java --add-modules jdk.httpserver -cp "$TEST_CP" edu.nus.tahelpdesk.HttpApiIntegrationTest
 java --add-modules jdk.httpserver -cp "$TEST_CP" edu.nus.tahelpdesk.StudentAiHelpTest
 java --add-modules jdk.httpserver -cp "$TEST_CP" edu.nus.tahelpdesk.SoCLaaSClientTest
 # StaticSiteTest binds a local HTTP listener and is therefore the last suite:

@@ -218,7 +218,7 @@ map for that PDF, which exists to help the student assistant find the right
 pages quickly.
 
 - **Generate all eligible maps** builds one for every text-ready PDF.
-- **Update map** regenerates a single PDF's map.
+- **Regenerate** creates a fresh map for a single PDF.
 - Each map arrives as **AI-generated — staff review required**. You then
   **Approve** or **Reject** it.
 - A map whose citations do not check out is marked **Unverified Knowledge
