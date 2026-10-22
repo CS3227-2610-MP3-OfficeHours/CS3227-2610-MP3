@@ -17,6 +17,8 @@ import java.util.Map;
  * must not expose gateway diagnostics, prompts, or credentials to clients.
  */
 public final class SoCLaaSClient {
+  private static final Duration CATALOG_TIMEOUT = Duration.ofSeconds(45);
+  static final Duration COMPLETION_TIMEOUT = Duration.ofMinutes(3);
   public enum Failure { configuration, rate_limited, temporarily_unavailable, rejected }
   public record Result(String text, Failure failure) {
     public boolean succeeded() { return failure == null; }
@@ -53,17 +55,22 @@ public final class SoCLaaSClient {
     String fallback = System.getenv("SOCLAAS_STAFF_FALLBACK_CHAT_MODEL");
     try {
       HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-      URI base = normalize(URI.create(url)); Duration timeout = Duration.ofSeconds(45);
-      return validatedClient(http, base, key, model, fallback, timeout);
+      URI base = normalize(URI.create(url));
+      return validatedClient(http, base, key, model, fallback, CATALOG_TIMEOUT, COMPLETION_TIMEOUT);
     } catch (Exception e) { return null; }
   }
 
   static SoCLaaSClient validatedClient(HttpClient http, URI base, String key, String model, String fallback, Duration timeout) {
+    return validatedClient(http, base, key, model, fallback, timeout, timeout);
+  }
+
+  private static SoCLaaSClient validatedClient(HttpClient http, URI base, String key, String model, String fallback,
+      Duration catalogTimeout, Duration completionTimeout) {
     if (blank(fallback)) fallback = null; else fallback = fallback.trim();
     try {
-      Set<String> catalog = fetchModels(http, normalize(base), key, timeout);
+      Set<String> catalog = fetchModels(http, normalize(base), key, catalogTimeout);
       if (!catalog.contains(model) || (fallback != null && (!catalog.contains(fallback) || model.equals(fallback)))) return null;
-      return new SoCLaaSClient(http, base, key, model, fallback, timeout);
+      return new SoCLaaSClient(http, base, key, model, fallback, completionTimeout);
     } catch (InterruptedException e) { Thread.currentThread().interrupt(); return null; }
       catch (IOException | RuntimeException e) { return null; }
   }
@@ -106,6 +113,7 @@ public final class SoCLaaSClient {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("model", selectedModel);
     body.put("temperature", 0);
+    body.put("reasoning_effort", "none");
     body.put("messages", List.of(Map.of("role", "system", "content", system),
         Map.of("role", "user", "content", "<course_sources>\n" + sourcePacket + "\n</course_sources>")));
     HttpRequest request = HttpRequest.newBuilder(baseUrl.resolve("chat/completions"))
