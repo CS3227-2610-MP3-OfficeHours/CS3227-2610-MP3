@@ -16,7 +16,7 @@ services:
     # Render gates the release on this, and the CI workflow re-checks it from
     # outside once the deploy reports done.
     healthCheckPath: /health
-    autoDeploy: false
+    autoDeployTrigger: checksPass
     envVars:
       # The image already pins TA_HELP_DESK_ENV, TA_HELP_DESK_STATIC_DIR and a
       # default port; the entrypoint adopts Render's injected PORT over that.
