@@ -13,4 +13,5 @@ public final class ApiException extends RuntimeException {
   public static ApiException conflict(String message) { return new ApiException(409, "conflict", message); }
   public static ApiException requestTooLarge() { return new ApiException(413, "request_too_large", "The request is too large."); }
   public static ApiException rateLimited(String message) { return new ApiException(429, "retry_limited", message); }
+  public static ApiException unavailable(String message) { return new ApiException(503, "service_unavailable", message); }
 }

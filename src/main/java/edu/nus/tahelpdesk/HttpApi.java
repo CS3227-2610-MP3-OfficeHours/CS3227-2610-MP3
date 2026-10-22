@@ -12,9 +12,10 @@ import static edu.nus.tahelpdesk.Domain.*;
 public final class HttpApi implements HttpHandler {
   static final int MAX_JSON_BODY_BYTES = 1_048_576;
   static final int MAX_MATERIAL_UPLOAD_BODY_BYTES = 29_360_128;
-  private final PlatformService service; private final SessionManager sessions; private final boolean secureCookies;
-  public HttpApi(PlatformService service) { this(service, false); }
-  public HttpApi(PlatformService service, boolean secureCookies) { this.service = service; this.sessions = new SessionManager(); this.secureCookies = secureCookies; }
+  private final PlatformService service; private final SessionManager sessions; private final boolean secureCookies; private final StaticSite site;
+  public HttpApi(PlatformService service) { this(service, false, null); }
+  public HttpApi(PlatformService service, boolean secureCookies) { this(service, secureCookies, null); }
+  public HttpApi(PlatformService service, boolean secureCookies, StaticSite site) { this.service = service; this.sessions = new SessionManager(); this.secureCookies = secureCookies; this.site = site; }
   @Override public void handle(HttpExchange exchange) throws IOException {
     try { dispatch(exchange); } catch (ApiException e) { respond(exchange, e.status, Map.of("error", Map.of("code", e.code, "message", e.getMessage()))); }
       catch (IllegalArgumentException e) { respond(exchange, 404, Map.of("error", Map.of("code", "not_found", "message", "The requested resource is unavailable."))); }
@@ -26,6 +27,10 @@ public final class HttpApi implements HttpHandler {
     if ("POST".equals(method) && "/api/auth/signup".equals(path)) { Map<String,Object>b=body(x); User u=service.signup(Json.string(b,"username"),Json.string(b,"password"),Json.string(b,"role")); signedIn(x,u,201); return; }
     if ("POST".equals(method) && "/api/auth/signin".equals(path)) { Map<String,Object>b=body(x); signedIn(x,service.authenticate(Json.string(b,"username"),Json.string(b,"password")),200); return; }
     if ("POST".equals(method) && "/api/auth/signout".equals(path)) { sessions.revoke(token(x)); respond(x,204,null); return; }
+    // The client build is public and must be reachable before sign-in; the API
+    // below stays behind the session check.
+    boolean apiPath = "/api".equals(path) || path.startsWith("/api/");
+    if (!apiPath && site != null && site.serve(x, method, path)) return;
     UUID actor = sessions.require(token(x));
     if ("GET".equals(method) && "/api/me".equals(path)) { respond(x,200, Map.of("user", user(service.current(actor)))); return; }
     if ("GET".equals(method) && "/api/courses".equals(path)) { respond(x,200, Map.of("courses", service.listCourses(actor).stream().map(this::course).toList())); return; }
@@ -51,6 +56,8 @@ public final class HttpApi implements HttpHandler {
     if(p.length==5 && "materials".equals(p[4]) && "POST".equals(method)){Map<String,Object>b=body(x,MAX_MATERIAL_UPLOAD_BODY_BYTES); Material m=service.uploadMaterial(actor,courseId,Json.string(b,"filename"),Json.string(b,"contentType"),base64(Json.string(b,"contentBase64")));respond(x,201,Map.of("material",material(m)));return;}
     if(p.length==7 && "materials".equals(p[4]) && "retry".equals(p[6]) && "POST".equals(method)){respond(x,200,Map.of("material",material(service.retryMaterial(actor,courseId,id(p[5])))));return;}
     if(p.length==6 && "materials".equals(p[4]) && "DELETE".equals(method)){service.deleteMaterial(actor,courseId,id(p[5]));respond(x,204,null);return;}
+    if(p.length==5 && "ai-help".equals(p[4]) && "GET".equals(method)){respond(x,200,Map.of("configured",service.studentAiConfigured(actor,courseId)));return;}
+    if(p.length==5 && "ai-help".equals(p[4]) && "POST".equals(method)){respond(x,200,Map.of("result",aiResult(courseId,service.studentAiHelp(actor,courseId,Json.string(body(x),"question")))));return;}
     if(p.length==5 && "resources".equals(p[4]) && "GET".equals(method)){respond(x,200,Map.of("resources",service.listResources(actor,courseId).stream().map(this::resource).toList()));return;}
     if(p.length==7 && "resources".equals(p[4]) && "download".equals(p[6]) && "GET".equals(method)){download(x,service.downloadResource(actor,courseId,id(p[5])));return;}
     if(p.length==5 && "knowledge-maps".equals(p[4]) && "GET".equals(method)){respond(x,200,Map.of("maps",service.listKnowledgeMaps(actor,courseId).stream().map(this::knowledgeMapState).toList(),"fallbackConfigured",service.knowledgeMapFallbackConfigured(actor,courseId)));return;}
@@ -77,6 +84,9 @@ public final class HttpApi implements HttpHandler {
   private Map<String,Object> comment(Comment c){User u=service.author(c.authorId());Map<String,Object>out=new LinkedHashMap<>();out.put("id",c.id().toString());out.put("postId",c.postId().toString());out.put("body",c.body());out.put("renderedBody",Markdown.render(c.body()));out.put("author",user(u));out.put("createdAt",c.createdAt().toString());out.put("updatedAt",c.updatedAt().toString());return out;}
   private Map<String,Object> material(Material m){Map<String,Object> out=new LinkedHashMap<>();out.put("id",m.id().toString());out.put("courseId",m.courseId().toString());out.put("filename",m.filename());out.put("status",m.status().name());out.put("pageCount",m.pageCount());out.put("failureMessage",m.failureMessage());out.put("createdAt",m.createdAt().toString());out.put("updatedAt",m.updatedAt().toString());return out;}
   private Map<String,Object> resource(Material m){return Map.of("id",m.id().toString(),"filename",m.filename(),"downloadPath","/api/courses/"+m.courseId()+"/resources/"+m.id()+"/download");}
+  /** Deliberately omits page text, map text, prompts, and model identifiers. */
+  private Map<String,Object> aiResult(UUID courseId,StudentAiService.Answer answer){Map<String,Object> out=new LinkedHashMap<>();out.put("outcome",answer.outcome().name());out.put("answer",answer.text());out.put("citations",answer.citations().stream().map(citation->aiCitation(courseId,citation)).toList());return out;}
+  private Map<String,Object> aiCitation(UUID courseId,StudentAiService.Citation citation){return Map.of("materialId",citation.materialId().toString(),"filename",citation.filename(),"page",citation.page(),"downloadPath","/api/courses/"+courseId+"/resources/"+citation.materialId()+"/download");}
   private Map<String,Object> knowledgeMap(KnowledgeMap map){Map<String,Object> out=new LinkedHashMap<>();out.put("id",map.id().toString());out.put("courseId",map.courseId().toString());out.put("materialId",map.materialId().toString());out.put("status",map.status().name());out.put("content",map.content());out.put("verificationMessage",map.verificationMessage());out.put("requestedBy",map.requestedBy().toString());out.put("reviewedBy",map.reviewedBy()==null?null:map.reviewedBy().toString());out.put("reviewedAt",map.reviewedAt()==null?null:map.reviewedAt().toString());out.put("createdAt",map.createdAt().toString());out.put("updatedAt",map.updatedAt().toString());return out;}
   private Map<String,Object> knowledgeMapJob(KnowledgeMapJob job){Map<String,Object> out=new LinkedHashMap<>();out.put("id",job.id().toString());out.put("materialId",job.materialId().toString());out.put("status",job.status().name());out.put("failureMessage",job.failureMessage());out.put("createdAt",job.createdAt().toString());out.put("updatedAt",job.updatedAt().toString());return out;}
   @SuppressWarnings("unchecked") private Map<String,Object> knowledgeMapState(Map<String,Object> state){Map<String,Object> out=new LinkedHashMap<>();out.put("material",material((Material)state.get("material"))); Object candidate=state.get("candidate"), approved=state.get("approved"), job=state.get("job");out.put("candidate",candidate==null?null:knowledgeMap((KnowledgeMap)candidate));out.put("approved",approved==null?null:knowledgeMap((KnowledgeMap)approved));out.put("job",job==null?null:knowledgeMapJob((KnowledgeMapJob)job));return out;}

@@ -77,4 +77,26 @@ export type MaterialMapState = {
   approved: KnowledgeMap | null;
   job: KnowledgeMapJob | null;
 };
-export type Tab = "forum" | "resources" | "materials" | "members" | "settings";
+export type AiOutcome =
+  | "administrative"
+  | "guidance"
+  | "refused"
+  | "insufficient_evidence";
+export type AiCitation = {
+  materialId: string;
+  filename: string;
+  page: number;
+  downloadPath: string;
+};
+export type AiResult = {
+  outcome: AiOutcome;
+  answer: string;
+  citations: AiCitation[];
+};
+export type Tab =
+  | "forum"
+  | "resources"
+  | "ai-help"
+  | "materials"
+  | "members"
+  | "settings";

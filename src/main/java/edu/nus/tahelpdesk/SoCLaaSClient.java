@@ -60,6 +60,20 @@ public final class SoCLaaSClient {
     } catch (Exception e) { return null; }
   }
 
+  /** Creates the student client only when the student secret is configured; never logs it. */
+  public static SoCLaaSClient studentFromEnvironment() {
+    String key = System.getenv("SOCLAAS_STUDENT_API_KEY");
+    if (blank(key)) return null;
+    String url = valueOrDefault(System.getenv("SOCLAAS_BASE_URL"), "https://soclaas-api.comp.nus.edu.sg/v1");
+    String model = valueOrDefault(System.getenv("SOCLAAS_STUDENT_CHAT_MODEL"), "gemma4:26b");
+    String fallback = System.getenv("SOCLAAS_STUDENT_FALLBACK_CHAT_MODEL");
+    try {
+      HttpClient http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+      URI base = normalize(URI.create(url)); Duration timeout = Duration.ofSeconds(45);
+      return validatedClient(http, base, key, model, fallback, timeout);
+    } catch (Exception e) { return null; }
+  }
+
   static SoCLaaSClient validatedClient(HttpClient http, URI base, String key, String model, String fallback, Duration timeout) {
     return validatedClient(http, base, key, model, fallback, timeout, timeout);
   }
@@ -90,6 +104,40 @@ public final class SoCLaaSClient {
   }
 
   /**
+   * Student AI gateway path. The classification call carries only the student's
+   * own question; the composition call carries the quoted source packet. The
+   * caller enforces authorization, eligibility, and citation validation.
+   */
+  public StudentAiService.Provider studentProvider() {
+    return new StudentAiService.Provider() {
+      @Override public Result classify(String systemPrompt, String question) {
+        return chat(systemPrompt, "<student_question>\n" + question + "\n</student_question>", CLASSIFY_TOKENS);
+      }
+      @Override public Result compose(String systemPrompt, String userPrompt) {
+        return chat(systemPrompt, userPrompt, COMPOSE_TOKENS);
+      }
+    };
+  }
+
+  /**
+   * Token budgets for the student path.
+   *
+   * <p>These are deliberately far larger than the visible answer needs. The
+   * permitted chat models reason before answering and spend the completion
+   * budget on that reasoning first, returning it in a separate field and
+   * leaving {@code content} empty with {@code finish_reason: "length"} when
+   * the budget runs out. Measured against the gateway on 2026-10-22: a
+   * one-word classification spent about 1,500 characters of reasoning and
+   * produced no content at all below roughly 600 tokens, and a grounded
+   * answer over eight source pages used 984 completion tokens in total.
+   *
+   * <p>The adapter never falls back to the reasoning field, because that is
+   * the model's private working and must not reach a student.
+   */
+  private static final int CLASSIFY_TOKENS = 768;
+  private static final int COMPOSE_TOKENS = 2_000;
+
+  /**
    * Sends source material as quoted data, never as authority to change policy.
    * The caller must first enforce course authorization and source currentness.
    */
@@ -98,6 +146,14 @@ public final class SoCLaaSClient {
     Result primary = generateKnowledgeMapOnce(sourcePacket, model);
     if (primary.failure() != Failure.temporarily_unavailable || fallbackModel == null) return primary;
     return generateKnowledgeMapOnce(sourcePacket, fallbackModel);
+  }
+
+  /** Retries once on the fallback model when the primary is transiently unavailable. */
+  private Result chat(String system, String user, int maxTokens) {
+    if (blank(system) || blank(user)) return Result.failure(Failure.rejected);
+    Result primary = chatOnce(model, system, user, maxTokens);
+    if (primary.failure() != Failure.temporarily_unavailable || fallbackModel == null) return primary;
+    return chatOnce(fallbackModel, system, user, maxTokens);
   }
 
   private Result generateKnowledgeMapOnce(String sourcePacket, String selectedModel) {
@@ -110,12 +166,18 @@ public final class SoCLaaSClient {
         + "Use this exact citation format: "
         + "(filename.pdf, p. N), including the comma, 'p.', and a one-based page number; for example, "
         + "(l0.pdf, p. 1). Cite only supplied filename/page pairs, and cite every supplied text-bearing PDF at least once.";
+    return chatOnce(selectedModel, system, "<course_sources>\n" + sourcePacket + "\n</course_sources>", null);
+  }
+
+  /** The single gateway call. Every outcome is a typed, client-safe Result. */
+  private Result chatOnce(String selectedModel, String system, String user, Integer maxTokens) {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("model", selectedModel);
     body.put("temperature", 0);
     body.put("reasoning_effort", "none");
     body.put("messages", List.of(Map.of("role", "system", "content", system),
-        Map.of("role", "user", "content", "<course_sources>\n" + sourcePacket + "\n</course_sources>")));
+        Map.of("role", "user", "content", user)));
+    if (maxTokens != null) body.put("max_tokens", maxTokens);
     HttpRequest request = HttpRequest.newBuilder(baseUrl.resolve("chat/completions"))
         .timeout(timeout)
         .header("Authorization", "Bearer " + apiKey)

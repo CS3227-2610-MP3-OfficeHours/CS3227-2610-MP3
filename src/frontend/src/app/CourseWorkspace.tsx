@@ -3,6 +3,7 @@ import { KnowledgeMapWorkspace } from "../knowledge-maps/KnowledgeMapWorkspace";
 import { Members } from "../members/Members";
 import { Resources } from "../resources/Resources";
 import { Settings } from "../settings/Settings";
+import { AiHelp } from "../student-ai/AiHelp";
 import type { Course, Tab, User } from "../api/types";
 import { Banner } from "../shared/ui";
 export function CourseWorkspace({
@@ -57,6 +58,14 @@ export function CourseWorkspace({
         >
           Resources
         </button>
+        {!staff && (
+          <button
+            className={tab === "ai-help" ? "active" : ""}
+            onClick={() => navigate("ai-help")}
+          >
+            AI help
+          </button>
+        )}
         {staff && (
           <>
             <button
@@ -102,6 +111,7 @@ export function CourseWorkspace({
           reportNotice={reportNotice}
         />
       )}
+      {tab === "ai-help" && !staff && <AiHelp course={course} />}
       {tab === "materials" && staff && (
         <KnowledgeMapWorkspace
           course={course}

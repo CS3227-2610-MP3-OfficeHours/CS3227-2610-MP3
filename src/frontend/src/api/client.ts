@@ -142,6 +142,17 @@ function isMaterialMapState(value: unknown): value is ApiRecord {
   );
 }
 
+function isAiCitation(value: unknown): value is ApiRecord {
+  return isRecord(value) && isString(value.materialId) && isString(value.filename)
+    && typeof value.page === "number" && isString(value.downloadPath);
+}
+
+function isAiResult(value: unknown): value is ApiRecord {
+  return isRecord(value)
+    && ["administrative", "guidance", "refused", "insufficient_evidence"].includes(value.outcome as string)
+    && isString(value.answer) && Array.isArray(value.citations) && value.citations.every(isAiCitation);
+}
+
 function hasArray(
   value: ApiRecord,
   key: string,
@@ -208,6 +219,10 @@ function decodeResponse(
       isBoolean(payload.fallbackConfigured)
       ? payload
       : invalidResponse();
+  if (/^\/api\/courses\/[^/]+\/ai-help$/.test(pathname) && method === "GET")
+    return isBoolean(payload.configured) ? payload : invalidResponse();
+  if (/^\/api\/courses\/[^/]+\/ai-help$/.test(pathname) && method === "POST")
+    return isAiResult(payload.result) ? payload : invalidResponse();
   return payload;
 }
 
