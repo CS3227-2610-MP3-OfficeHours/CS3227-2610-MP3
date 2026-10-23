@@ -8,22 +8,22 @@ title: Reflections
 ## AI Security
 
 I want to share about a unique attack vector that we considered. Our
-staff-facing AI feature turns an uploaded lecture PDF into a topic map, and we
-were quite pleased with the review step we put in front of it. A generated map
-arrives as pending_review, and only course staff can approve it.
+staff-facing AI feature turns an uploaded lecture PDF into a topic map, which has 
+to be manually approved by a staff user before it is put into use. Once approved, 
+the topic map is used by the student AI to obtain information and references efficiently. 
+Overall, the sequence works like this: upload untrusted PDF, obtain 
+model output from staff AI, then a human approval, then input to a second AI feature. 
+On the surface, it seemed like good path with human-gated approvals. However, 
+if you think about it from a different perspective, it can also become a path 
+for attacker-controlled text to arrive somewhere trusted, and the
+approval step becomes an important "status promotion" step. The big issue with this, 
+we realised, is how much can we trust the average user to really pay attention 
+to what they are approving? If a staff accidentally uploads a compromised file,
+they likely didn't realise it was compromised in the first place, and thus might 
+not feel motivated to carefully check the output before granting approval.
 
-The problem surfaced while we were specifying the student feature, when we had
-to write down where its retrieval actually gets its hints from. The answer was
-the approved maps. Written out as a sequence, it read: untrusted PDF, then
-model output, then a human approval, then input to a second AI feature. Each
-step on its own was something we had deliberately designed. Together they were
-a path for attacker-controlled text to arrive somewhere trusted, and the
-approval was the step doing the promoting. We had built the gate as a defence
-without noticing it was also the only thing in the system that upgrades
-untrusted content to approved content.
-
-We decided instead to change what approval grants instead of trying to make the
-check stronger. An approved map now only feeds server-side relevance scoring:
+To address the human vulnerability in this chain, we decided instead to change what 
+approval means. An approved map now only feeds server-side relevance scoring:
 we count how many of the question's terms appear in it and use that as a
 multiplier on that PDF's own pages, capped at 3x. The map's text is never put
 into a prompt, never sent to the gateway, and never shown to a student. The
@@ -48,13 +48,14 @@ approved doesn't buy very much.
 
 Our first instinct was that a precise specification means a detailed one, and
 we wrote a fairly long spec for the student AI feature before anyone touched
-code. It read well. The problem only showed up during implementation, when the
+code. The problem only showed up during implementation, when the
 engineer agent hit a question that both the approved specification and the
-approved design answered, differently. One said a refused request should still
+approved design had answered differently. One said a refused request should still
 point the student at the relevant material; the other said a refusal should be
-a fixed message and nothing else. Both documents had been approved by us. Both
-were specific. An implementer could follow either one and be in violation of
-the other.
+a fixed message and nothing else. Because of human oversight and our failure to 
+carefully read both specs before approval, both documents had been approved by us, 
+meaning that an implementer could follow either one 
+and be in violation of the other.
 
 What saved us was a line we had put in the spec almost as boilerplate, saying
 that the normative record under workflow/specs/ governs wherever two artefacts
@@ -62,11 +63,12 @@ disagree. That one sentence turned what would have been an argument into a
 lookup, and the engineer resolved it without coming back to us. We would not
 have thought to write a precedence rule in advance if we were starting again
 from nothing, but we would now, because with several approved documents per
-feature it is not a question of whether two of them will eventually disagree.
+feature it is simply a question of time until when two of them will eventually disagree.
 
 The other test of precision we ended up using is simpler: a specification is
 not precise enough if its acceptance criteria can be satisfied while the
-feature does not work. More on that below, because that one bit us twice.
+feature does not work. We'll share more about this below because it caused several
+issues for us.
 
 ### What Happens When Behaviour Changes
 
@@ -74,17 +76,20 @@ The academic-integrity boundary - what the assistant is and is not allowed to
 say - changed three times over the project, and watching how each change
 travelled was probably the most useful part of using SDD for us.
 
-It started as "guidance only, always". Building it revealed that this refuses
-"when is the midterm", which is course administration rather than assessed work
-and is exactly the kind of thing a help desk exists for. The fix was to amend
-the specification into three scopes rather than quietly special-case it in the
-prompt. Later, resolving the contradiction above changed what a refusal does,
-so we reissued the answer guidelines as v2 with a change-log row and kept the
-old rule visible as superseded. The version string is rendered into the prompt
-the server sends and asserted by a test, so the document and the running system
-cannot drift apart without something failing.
+It started as "guidance only, always", because we wanted the AI agent to aid learning
+and not end up doing students' assignments for them. However, when we actually built
+and tested the feature, it revealed that this prompt meant that the agent refused to 
+help with simple questions like "when is the midterm", which is course administration 
+rather than assessed work and is exactly the kind of thing a help desk exists for. 
+To address this, we had to amend the specification and identify different scenarios that 
+the agent might encounter. This was an important learning point for us because with a multi-agent system, 
+we had defaulted to a waterfall style of development, building large features in one go
+that almost made us miss out on smaller issues. Thankfully, this change to the prompt was 
+minimal and we were able to catch the bug in time. We realised that even when using 
+multiple agents, we should keep our specs minimal and focused, so that we can test and 
+quickly fix issues.
 
-The part we got wrong was assuming a behaviour change is finished when the code
+The other part we got wrong was assuming a behaviour change is finished when the code
 and the policy document are updated. During verification the tester found that
 the refusal row in two spec documents and one user story still described the
 old behaviour. Nothing was broken, but acceptance is measured against the
@@ -97,21 +102,28 @@ has been amended too.
 This is where SDD was most uncomfortable for us, because it is very easy to
 write a test that satisfies a criterion and proves nothing.
 
-Our criterion said that answers must carry citations, and our validator checked
-that each answer had at least one valid citation. That is the criterion, met
-exactly. The tester then produced an answer containing an invented midterm date
-and an invented weightage, followed by one real citation, which rendered under
-the badge that tells a student the answer is sourced from course material. The
-words were satisfied; the intent, which is that a student cannot be told
-something the material does not say, was not. We changed the check to require
+For example, we had one acceptance criterion said that answers must carry citations, and our validator checked
+that each answer had at least one valid citation. On paper, it seemed like we 
+met the criterion exactly. The tester then produced an answer containing an invented midterm date
+and an invented weightage, followed by one real citation later on in the response. The
+wording of the specs were satisfied; the intent, which is that a student cannot be told
+something the material does not say, was not. To address this, we better aligned
+our acceptance criterion to our intent and changed the check to require
 that every asserting sentence carries its own citation.
 
-The second one was worse because it was our own test. We had a test asserting
-that a PDF with an approved Knowledge Map is retrieved before one without, and
+Another example and issue we faced was that we had a test asserting that a PDF 
+with an approved Knowledge Map is retrieved before one without, and
 it passed. The tester noticed that our two fixtures were not otherwise equal
 and the mapped file also happened to win the alphabetical tie-break, which
-means the test would have passed with the entire feature deleted. A green test
-that cannot fail is worse than no test, because it gets counted as evidence.
+means the test would have passed with the entire feature deleted. In this sense,
+SDD and multi-agent orchestration is a bit hard to balance together. Because the 
+multi-agent system makes development so fast and effortless, it is tempting to not 
+review all the many, many, many artefacts that are produced during development. There
+were many times where we were both tempted not to read through a 5-page specs document 
+in detail. However, this example made us realise the importance of prioritising test-driven
+development and writing good tests when you utilise multi-agent-orchestration. Because
+without sufficient attention being paid to test implementation, you might end up with a green test
+that cannot fail. This is even worse than no test, because it gets counted as evidence.
 
 The last gap was one no amount of specification discipline would have closed.
 Every suite passed against a stubbed gateway, and then every question against
