@@ -10,6 +10,12 @@ Responses are JSON. Failures use
 session, `403` for a role prohibition, `404` for unavailable/protected course
 resources, `409` for unique conflicts, and `422` for malformed input.
 
+Staff Knowledge Map generation can also return `429` with
+`{ "error": { "code": "generation_rate_limited", "message": "Generation limit reached…", "retryAt": "ISO-8601 timestamp" } }`
+and a rounded-up `Retry-After` response header. `retryAt` and `Retry-After` are
+calculated by the server. The response deliberately omits the exhausted scope,
+remaining quota, jobs in other courses, and provider details.
+
 ## Client boundary
 
 The React + TypeScript client consumes this API with its session cookie (or a
