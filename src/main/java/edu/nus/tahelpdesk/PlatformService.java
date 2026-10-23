@@ -42,6 +42,8 @@ public class PlatformService {
       new ArrayBlockingQueue<>(16), r -> { Thread thread = new Thread(r, "knowledge-map-processor"); thread.setDaemon(true); return thread; }, new ThreadPoolExecutor.AbortPolicy());
   private final PasswordHasher passwords = new PasswordHasher();
   private final Runnable afterMutation;
+  @FunctionalInterface interface MaterialContentLoader { byte[] load(UUID materialId); }
+  private volatile MaterialContentLoader materialContentLoader;
   private volatile KnowledgeMapGenerator knowledgeMapGenerator;
   private volatile boolean knowledgeMapFallbackConfigured;
   private volatile StudentAiService.Provider studentAiProvider;
@@ -51,6 +53,7 @@ public class PlatformService {
   public PlatformService() { this(() -> {}); }
   /** Package-private so the PostgreSQL adapter can load state before serving requests. */
   PlatformService(Runnable afterMutation) { this.afterMutation = afterMutation; }
+  void setMaterialContentLoader(MaterialContentLoader loader) { materialContentLoader = loader; }
   synchronized boolean isEmpty() { return users.isEmpty(); }
   synchronized void restore(Collection<User> loadedUsers, Collection<Course> loadedCourses,
       Collection<Membership> loadedMemberships, Collection<ForumTag> loadedTags, Collection<Post> loadedPosts, Collection<Comment> loadedComments, Collection<Material> loadedMaterials, Collection<PdfPage> loadedPages, Collection<KnowledgeMap> loadedCandidates, Collection<KnowledgeMap> loadedApproved, Collection<KnowledgeMapJob> loadedJobs) {
@@ -120,13 +123,13 @@ public class PlatformService {
   public List<Material> listMaterials(UUID actor, UUID courseId) {
     requireCourseStaff(actor, courseId);
     return materials.values().stream().filter(m -> m.courseId().equals(courseId) && m.status() != MaterialStatus.deleted)
-        .sorted(Comparator.comparing(Material::createdAt).reversed()).map(PlatformService::copyMaterial).toList();
+        .sorted(Comparator.comparing(Material::createdAt).reversed()).map(PlatformService::metadata).toList();
   }
   /** Resource list exposes every accepted, non-deleted PDF to current course members. */
   public List<Material> listResources(UUID actor, UUID courseId) {
     requireCourseMember(actor, courseId);
     return materials.values().stream().filter(m -> m.courseId().equals(courseId) && m.status() != MaterialStatus.deleted)
-        .sorted(Comparator.comparing(Material::createdAt).reversed()).map(PlatformService::copyMaterial).toList();
+        .sorted(Comparator.comparing(Material::createdAt).reversed()).map(PlatformService::metadata).toList();
   }
   public synchronized Material uploadMaterial(UUID actor, UUID courseId, String filename, String contentType, byte[] content) {
     requireCourseStaff(actor, courseId); PdfPageExtractor.Result inspected = validateMaterial(filename, contentType, content);
@@ -137,14 +140,14 @@ public class PlatformService {
     Instant now = Instant.now();
     Material material = new Material(UUID.randomUUID(), courseId, actor, safeFilename(filename), MaterialStatus.processing,
         null, content.clone(), pages, now, now);
-    materials.put(material.id(), material); changed(); scheduleProcessing(material.id()); return copyMaterial(material);
+    materials.put(material.id(), material); changed(); if (materialContentLoader != null) materials.put(material.id(), metadata(material)); scheduleProcessing(material.id()); return metadata(material);
   }
   public synchronized void deleteMaterial(UUID actor, UUID courseId, UUID materialId) {
     requireCourseStaff(actor, courseId); Material old = requireMaterialInCourse(courseId, materialId);
     if (old.status() == MaterialStatus.deleted) throw ApiException.hidden();
     materialPages.remove(old.id());
     materials.put(old.id(), new Material(old.id(), old.courseId(), old.uploaderId(), old.filename(), MaterialStatus.deleted,
-        null, old.content(), old.pageCount(), old.createdAt(), Instant.now())); removeMaterialMaps(old.id()); changed();
+        null, retained(old), old.pageCount(), old.createdAt(), Instant.now())); removeMaterialMaps(old.id()); changed();
   }
   public synchronized Material retryMaterial(UUID actor, UUID courseId, UUID materialId) {
     requireCourseStaff(actor, courseId); Material old = requireMaterialInCourse(courseId, materialId);
@@ -152,7 +155,7 @@ public class PlatformService {
     enforceRetryLimit(actor, courseId);
     materialPages.remove(old.id());
     Material retried = new Material(old.id(), old.courseId(), old.uploaderId(), old.filename(), MaterialStatus.processing,
-        null, old.content(), old.pageCount(), old.createdAt(), Instant.now()); materials.put(old.id(), retried); removeMaterialMaps(old.id()); changed(); scheduleProcessing(retried.id()); return copyMaterial(retried);
+        null, retained(old), old.pageCount(), old.createdAt(), Instant.now()); materials.put(old.id(), retried); removeMaterialMaps(old.id()); changed(); scheduleProcessing(retried.id()); return metadata(retried);
   }
   /** Staff-only per-material state. Students deliberately have no equivalent endpoint yet. */
   public synchronized List<Map<String, Object>> listKnowledgeMaps(UUID actor, UUID courseId) {
@@ -166,7 +169,7 @@ public class PlatformService {
     Material source = requireMaterialInCourse(courseId, materialId);
     if (source.status() != MaterialStatus.active) throw ApiException.validation("This PDF is not text-ready for Knowledge Map generation.");
     KnowledgeMapJob prior = knowledgeMapJobs.get(materialId); if (prior != null && (prior.status() == KnowledgeMapJobStatus.queued || prior.status() == KnowledgeMapJobStatus.generating)) throw ApiException.conflict("A Knowledge Map update is already running for this PDF.");
-    String digest = PdfPageExtractor.digest(source.content()); String packet = sourcePacket(source);
+    String digest = PdfPageExtractor.digest(content(source)); String packet = sourcePacket(source);
     Instant now = Instant.now(); KnowledgeMapJob job = new KnowledgeMapJob(UUID.randomUUID(), courseId, materialId, digest, actor, KnowledgeMapJobStatus.queued, null, null, now, now);
     knowledgeMapJobs.put(materialId, job); changed();
     try { knowledgeMapProcessor.execute(() -> completeKnowledgeMap(job.id(), courseId, materialId, digest, packet)); }
@@ -188,7 +191,7 @@ public class PlatformService {
   public Material downloadResource(UUID actor, UUID courseId, UUID materialId) {
     requireCourseMember(actor, courseId); Material material = requireMaterialInCourse(courseId, materialId);
     if (material.status() == MaterialStatus.deleted) throw ApiException.hidden();
-    return copyMaterial(material);
+    byte[] bytes=content(material); return new Material(material.id(),material.courseId(),material.uploaderId(),material.filename(),material.status(),material.failureMessage(),bytes.clone(),material.pageCount(),material.createdAt(),material.updatedAt());
   }
   public List<Course> listCourses(UUID actor) {
     requireUser(actor); return courses.values().stream().filter(c -> membership(c.id(), actor) != null)
@@ -386,13 +389,16 @@ public class PlatformService {
     return inspected;
   }
   private static String safeFilename(String filename) { return filename.trim().replaceAll("[\\r\\n]", " "); }
-  private static Material copyMaterial(Material material) { return new Material(material.id(), material.courseId(), material.uploaderId(), material.filename(), material.status(), material.failureMessage(), material.content().clone(), material.pageCount(), material.createdAt(), material.updatedAt()); }
+  private static Material copyMaterial(Material material) { return new Material(material.id(), material.courseId(), material.uploaderId(), material.filename(), material.status(), material.failureMessage(), material.content()==null?null:material.content().clone(), material.pageCount(), material.createdAt(), material.updatedAt()); }
+  private static Material metadata(Material material) { return new Material(material.id(),material.courseId(),material.uploaderId(),material.filename(),material.status(),material.failureMessage(),null,material.pageCount(),material.createdAt(),material.updatedAt()); }
+  private byte[] content(Material material) { if(material.content()!=null)return material.content(); MaterialContentLoader loader=materialContentLoader; if(loader==null)throw new IllegalStateException("Material content is unavailable."); byte[] bytes=loader.load(material.id()); if(bytes==null)throw new IllegalStateException("Material content is unavailable."); return bytes; }
+  private byte[] retained(Material material) { return materialContentLoader==null?material.content():null; }
   private static KnowledgeMap copyKnowledgeMap(KnowledgeMap map) { return new KnowledgeMap(map.id(), map.courseId(), map.materialId(), map.materialDigest(), map.requestedBy(), map.status(), map.content(), map.verificationMessage(), map.reviewedBy(), map.reviewedAt(), map.createdAt(), map.updatedAt()); }
   private static KnowledgeMapJob copyKnowledgeMapJob(KnowledgeMapJob job) { return new KnowledgeMapJob(job.id(), job.courseId(), job.materialId(), job.materialDigest(), job.requestedBy(), job.status(), job.failureMessage(), job.outputMapId(), job.createdAt(), job.updatedAt()); }
-  private List<Material> activeMaterials(UUID courseId) { return materials.values().stream().filter(material -> material.courseId().equals(courseId) && material.status() == MaterialStatus.active).sorted(Comparator.comparing(Material::createdAt)).map(PlatformService::copyMaterial).toList(); }
+  private List<Material> activeMaterials(UUID courseId) { return materials.values().stream().filter(material -> material.courseId().equals(courseId) && material.status() == MaterialStatus.active).sorted(Comparator.comparing(Material::createdAt)).map(PlatformService::metadata).toList(); }
   private KnowledgeMap requireReviewableKnowledgeMap(UUID courseId, UUID materialId) { KnowledgeMap map = candidates.get(materialId); if (map == null || !map.courseId().equals(courseId)) throw ApiException.validation("Only a completed Knowledge Map awaiting review can be approved or rejected."); return map; }
   private void removeMaterialMaps(UUID materialId) { candidates.remove(materialId); approvedMaps.remove(materialId); knowledgeMapJobs.remove(materialId); }
-  private boolean sourceCurrent(KnowledgeMap map) { Material material = materials.get(map.materialId()); return material != null && material.courseId().equals(map.courseId()) && material.status() == MaterialStatus.active && PdfPageExtractor.digest(material.content()).equals(map.materialDigest()); }
+  private boolean sourceCurrent(KnowledgeMap map) { Material material = materials.get(map.materialId()); return material != null && material.courseId().equals(map.courseId()) && material.status() == MaterialStatus.active && PdfPageExtractor.digest(content(material)).equals(map.materialDigest()); }
   private String sourcePacket(Material source) {
     StringBuilder packet = new StringBuilder();
     List<PdfPage> pages = materialPages.getOrDefault(source.id(), List.of());
@@ -424,7 +430,7 @@ public class PlatformService {
       changed();
     }
   }
-  private boolean sourceCurrent(KnowledgeMapJob job) { Material material = materials.get(job.materialId()); return material != null && material.courseId().equals(job.courseId()) && material.status() == MaterialStatus.active && PdfPageExtractor.digest(material.content()).equals(job.materialDigest()); }
+  private boolean sourceCurrent(KnowledgeMapJob job) { Material material = materials.get(job.materialId()); return material != null && material.courseId().equals(job.courseId()) && material.status() == MaterialStatus.active && PdfPageExtractor.digest(content(material)).equals(job.materialDigest()); }
   private static KnowledgeMapJob failedJob(KnowledgeMapJob current, String failure) { return new KnowledgeMapJob(current.id(), current.courseId(), current.materialId(), current.materialDigest(), current.requestedBy(), KnowledgeMapJobStatus.failed, failure, null, current.createdAt(), Instant.now()); }
   private static KnowledgeMapJob cancelledJob(KnowledgeMapJob current) { return new KnowledgeMapJob(current.id(), current.courseId(), current.materialId(), current.materialDigest(), current.requestedBy(), KnowledgeMapJobStatus.cancelled_due_to_source_change, "This PDF changed or was removed before generation completed.", null, current.createdAt(), Instant.now()); }
   private String citationVerificationMessage(String content, Material source) {
@@ -461,17 +467,17 @@ public class PlatformService {
   private void scheduleProcessing(UUID materialId) { materialProcessor.schedule(() -> completeProcessing(materialId), 25, TimeUnit.MILLISECONDS); }
   private synchronized void completeProcessing(UUID materialId) {
     Material old = materials.get(materialId); if (old == null || old.status() != MaterialStatus.processing) return;
-    PdfPageExtractor.Result extraction = PdfPageExtractor.extract(old.content()); Instant now = Instant.now();
+    byte[] bytes=content(old); PdfPageExtractor.Result extraction = PdfPageExtractor.extract(bytes); Instant now = Instant.now();
     if (!extraction.succeeded()) {
       materials.put(old.id(), new Material(old.id(), old.courseId(), old.uploaderId(), old.filename(), MaterialStatus.failed,
-          safeExtractionFailure(extraction.failureCode()), old.content(), old.pageCount(), old.createdAt(), now));
+          safeExtractionFailure(extraction.failureCode()), retained(old), old.pageCount(), old.createdAt(), now));
       materialPages.remove(old.id()); changed(); return;
     }
-    String materialDigest = PdfPageExtractor.digest(old.content()); List<PdfPage> pages = new ArrayList<>();
+    String materialDigest = PdfPageExtractor.digest(bytes); List<PdfPage> pages = new ArrayList<>();
     for (int index = 0; index < extraction.pages().size(); index++) { String text = extraction.pages().get(index); pages.add(new PdfPage(old.id(), old.courseId(), materialDigest, index + 1, text, PdfPageExtractor.digestText(text), PdfPageExtractor.PARSER_VERSION, "ready", null, now, null)); }
     materialPages.put(old.id(), List.copyOf(pages));
     MaterialStatus status = extraction.hasText() ? MaterialStatus.active : MaterialStatus.resource_only;
-    materials.put(old.id(), new Material(old.id(), old.courseId(), old.uploaderId(), old.filename(), status, null, old.content(), extraction.pageCount(), old.createdAt(), now)); changed();
+    materials.put(old.id(), new Material(old.id(), old.courseId(), old.uploaderId(), old.filename(), status, null, retained(old), extraction.pageCount(), old.createdAt(), now)); changed();
   }
   private static String safeExtractionFailure(String code) {
     return switch (code) {
