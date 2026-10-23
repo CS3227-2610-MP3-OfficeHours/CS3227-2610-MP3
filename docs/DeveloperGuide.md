@@ -88,31 +88,31 @@ mutation replaces the record.
 Migrations `V1`–`V5` in `db/migrations/` are applied in order at startup before
 the server accepts traffic.
 
-**How files are stored, stated plainly.** Uploaded PDFs are held as `BYTEA` in
-`course_materials.content`. There is no object storage and nothing is written
-to disk. Extracted page text lives in `course_material_pdf_pages`, one row per
-page, with a digest of the source so a map can be detected as stale.
+**PDF persistence and bounded residency.** Uploaded PDFs are held as `BYTEA` in
+`course_materials.content`, within the same private PostgreSQL boundary as
+their course metadata. The application keeps only material metadata in its
+process-wide index: identifier, course, filename, status, page count, and
+timestamps. Startup and resource-list operations do not load PDF bytes.
 
-**Persistence model, and its consequences.** `PlatformService` holds all state
-in memory and is the read path; PostgreSQL is a durable snapshot. At boot
-`PostgresPlatform` loads every row, PDF bytes included, into memory. After each
-mutation it writes the entire state back inside one transaction.
+After the server has completed the relevant course authorization check, it
+retrieves a document from PostgreSQL only for an authorized download,
+PDF-processing operation, or source-currentness verification. The parser has
+one worker, so parsing stays bounded to one document at a time. Memory use is
+therefore driven by active material operations rather than the complete stored
+course-material corpus.
 
-This is simple and consistent, and it has three costs that a reader should know
-before extending the system:
+Persistent state is committed atomically. During a metadata-only save,
+unchanged PDF values remain inside PostgreSQL; the application supplies bytes
+only for a newly uploaded file. Extracted page-aware text remains in
+`course_material_pdf_pages`, with a source digest so a dependent Knowledge Map
+can be detected as stale.
 
-1. Every PDF is resident in heap for the process's lifetime. On a 512 MB host
-   that bounds total material at roughly fifteen 20 MB PDFs.
-2. `listResources` copies each material record, which copies its bytes, so
-   rendering a list of filenames allocates the size of the course's PDFs.
-3. Every mutation rewrites every table. Posting a forum comment rewrites every
-   stored PDF.
-
-None of this is visible at demonstration scale. It is the first thing to change
-if the system were taken further: move bytes to object storage and keep only
-references in the database, and replace the snapshot with per-entity writes.
-The Stage 6 plan in `workflow/implementation_plan.md` specifies that design; it
-was not built, and this guide does not claim otherwise.
+This approach keeps private course material under one durable,
+access-controlled service and avoids public storage URLs. It is appropriate for
+the enforced 20 MB per-PDF and 20-active-PDF-per-course limits. A future
+high-throughput deployment can introduce a private object-storage adapter or
+targeted entity writes without changing course authorization, material metadata,
+or page provenance.
 
 ### Limits enforced on the server
 
