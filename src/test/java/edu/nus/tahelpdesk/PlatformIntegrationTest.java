@@ -209,6 +209,8 @@ public final class PlatformIntegrationTest {
     expect(404, () -> s.generateKnowledgeMap(staffB.id(), second.id(), source.id()), "staff cannot generate a cross-course Knowledge Map");
     s.generateKnowledgeMap(staffA.id(), first.id(), source.id()); waitForMap(source.id(), KnowledgeMapJobStatus.completed);
     KnowledgeMap pending = candidate(source.id()); check(pending.materialId().equals(source.id()) && pending.verificationMessage() == null, "one-PDF request produces verified candidate");
+    expect(404, () -> s.approveKnowledgeMap(alice.id(), first.id(), source.id()), "student cannot approve a Knowledge Map");
+    expect(404, () -> s.approveKnowledgeMap(staffB.id(), second.id(), source.id()), "staff cannot approve a cross-course Knowledge Map");
     s.setKnowledgeMapGenerator(packet -> SoCLaaSClient.Result.failure(SoCLaaSClient.Failure.temporarily_unavailable));
     s.generateKnowledgeMap(staffA.id(), first.id(), source.id()); waitForMap(source.id(), KnowledgeMapJobStatus.failed);
     check(candidate(source.id()) != null && candidate(source.id()).content().contains("Topic"), "failed update retains candidate map");
