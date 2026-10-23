@@ -428,6 +428,7 @@ textarea {
   background: #fff;
   border: 1px solid #d9e1ee;
   border-radius: 6px;
+  margin-bottom: 1.5rem;
 }
 
 .status-badge {

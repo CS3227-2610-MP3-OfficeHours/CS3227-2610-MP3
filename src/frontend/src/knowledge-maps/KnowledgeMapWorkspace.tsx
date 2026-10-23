@@ -314,7 +314,7 @@ function MaterialMap({
           >
             {candidate.content}
           </div>
-          <div className="actions" aria-live="polite">
+          <div className="actions" aria-live="polite" style={{ marginTop: "2rem", paddingBottom: "1rem" }}>
             {!candidate.verificationMessage && (
               <button
                 className="primary"
