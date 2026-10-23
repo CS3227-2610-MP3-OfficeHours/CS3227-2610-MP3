@@ -9,9 +9,6 @@ The University TA Help Desk is a course-scoped forum with two AI features: one
 for course staff and one for students. This guide describes every feature the
 product currently has, and how to reach and test each one.
 
-Where a feature depends on configuration that may not be present in the
-environment you are testing, this guide says so rather than assuming it works.
-
 ---
 
 ## 1. Reaching the system
@@ -54,7 +51,7 @@ sh scripts/test.sh
 ## 2. Accounts and roles
 
 There are two roles, **student** and **staff**, chosen when the account is
-created. A single account has exactly one role; there is no switching.
+created. A single account has exactly one role and there is no switching.
 
 ### Creating your own account
 
@@ -64,16 +61,15 @@ account** / **Create staff account**.
 - Username: 3–40 characters, letters, numbers, dot, dash or underscore
 - Password: 8–128 characters
 
-Staff accounts are **self-selected and not institutionally verified**. This is
-a course project, so anyone may create one; the product states this on the
-staff signup screen.
+As this is a scope-limited course project, Staff accounts are **self-selected 
+and not institutionally verified**, meaning anyone may create one.
 
 Signing in with the wrong role is rejected: a student account cannot sign in
 through the Staff door, and vice versa.
 
 ### Seed accounts
 
-A locally run server with no database creates three accounts with the password
+For ease of testing, we have provided creates three accounts with the password
 `local-development-password`:
 
 | Username | Role | Enrolled in |
@@ -84,11 +80,6 @@ A locally run server with no database creates three accounts with the password
 
 These exist so the two-course isolation can be tested immediately:
 `seed.student` must never be able to see CS2103.
-
-On a deployed server these accounts are created **only** when the operator sets
-`TA_HELP_DESK_SEED_PASSWORD`, and they then use that password, never the one
-above. If it is not set, the deployment starts with no accounts and you create
-your own. Ask the team which applies to the instance you are testing.
 
 ---
 
@@ -148,9 +139,8 @@ Other things to know:
   nothing is kept after you leave the tab.
 - The tab is visible to students only.
 
-**Testing the boundary.** These are worth trying, and all are expected
-behaviour rather than bugs:
-
+**Testing the boundary.** 
+Here are some tests you can try:
 - `when is the midterm` on a course whose PDFs contain that → **Course info**
 - `explain how the master theorem works` → **Study guidance**
 - `give me the full solution to assignment 2` → **Guidance only**
@@ -177,8 +167,8 @@ behaviour rather than bugs:
 ## 4. What course staff can do
 
 Staff see **Forum**, **Resources**, **Knowledge Map**, **Members** and
-**Settings**. Staff do **not** see the student AI help tab; the server refuses
-staff requests to it.
+**Settings**. Staff do **not** see the student AI help tab and the server will 
+refuse staff requests to it.
 
 ### Courses
 
@@ -188,19 +178,19 @@ unique) and a name (max 160), and become its first staff member.
 ### Members
 
 - **Add member** by exact existing username. The person must already have an
-  account; adding is idempotent.
-- Remove a student. Removal takes effect immediately — a removed student loses
+  account.
+- Remove a student. Removal takes effect immediately. A removed student loses
   read and write access on their next request.
-- Staff memberships cannot be removed through this screen.
+- Staff memberships cannot be removed.
 
 ### Resources (staff view)
 
-Same list as students see, plus **Upload file** and a **Delete file** control
-per PDF.
+Similar to students, staff users can see a list of previously uploaded
+resources. Staff users also additionally have an **Upload file** and a **Delete file** 
+button per PDF.
 
-Upload limits, all enforced on the server:
-
-- PDF only, and the file must really be a PDF
+These are the file upload restrictions:
+- PDF only
 - Maximum 20 MB
 - Maximum 100 pages
 - Up to 20 active PDFs per course
@@ -210,7 +200,8 @@ Upload limits, all enforced on the server:
 After upload the PDF is processed in the background. It becomes:
 
 - **Text ready** — text extracted, usable by both AI features
-- **Resource only** — no selectable text (a scan). Downloadable, but no AI use
+- **Resource only** — no selectable text (might happen for image or scanned
+- PDFs). This file is still downloadable, but not available for AI use.
 - **Failed** — could not be processed; the reason is shown
 
 Deleting a PDF removes it from Resources immediately, and it stops being used
@@ -218,30 +209,28 @@ by AI from that moment.
 
 ### Knowledge Map
 
-This is the staff AI feature. It reads one PDF and produces a reviewable topic
-map for that PDF, which exists to help the student assistant find the right
-pages quickly.
+This is the staff AI feature. It reads PDFs and produces a reviewable topic
+map for each PDF, which exists to help the student AI assistant find the right
+resources and references quickly.
 
+Additional information:
 - **Generate all eligible maps** builds one for every text-ready PDF.
 - **Regenerate** creates a fresh map for a single PDF.
 - The **Active jobs** box shows this course's queued and generating map work and
   updates automatically; completed and failed jobs leave the box without a
   manual refresh.
-- Generation is limited by the server to 3 submissions per minute, 20 new jobs
+- Generation is limited to 3 submissions per minute, 20 new jobs
   per 10 minutes, and 40 new jobs per hour for each staff member. Each course
   also has the same 20-per-10-minute and 40-per-hour new-job limits shared by
-  its staff. If a limit is reached, the page gives the server-provided local
+  its staff. If a limit is reached, the page gives the local
   time to try again and temporarily disables generation controls. Reloading or
   changing browser state does not bypass the limit.
 - Each map arrives as **AI-generated — staff review required**. You then
   **Approve** or **Reject** it.
 - A map whose citations do not check out is marked **Unverified Knowledge
-  Map — staff review only**. It cannot be approved, and is never used by the
-  student assistant.
+  Map — staff review only**. It cannot be approved, and you should regenerate.
 - Only an approved map influences student retrieval, and only while its source
   PDF is unchanged. Deleting or replacing the PDF drops the map.
-- Generation uses Gemma 4 26B, falling back once to Qwen 3.5 9B if the service
-  is temporarily unavailable. The screen states this.
 
 A Knowledge Map is never shown to students and is never posted to the forum.
 
@@ -254,8 +243,7 @@ forum content, memberships and PDFs from view. You are asked to confirm.
 
 ## 5. Course isolation
 
-Everything is scoped to a course and enforced on the server, not by hiding
-buttons:
+All functions are scoped by courses.
 
 - You only see courses you belong to.
 - A request naming a course you do not belong to returns the same "not found"
@@ -264,18 +252,14 @@ buttons:
 - Staff of one course have no access to another course.
 - The AI only ever reads the PDFs of the course you asked in.
 
-Worth testing: sign in as `seed.student` and try to reach CS2103. You should
-see no trace of it.
 
 ---
 
 ## 6. Known limitations
 
-These are current, deliberate, and not defects:
+These are some limitations and restrictions of our platform:
 
 - **Free hosting sleeps.** First request after idle takes up to a minute.
-- **AI help needs a configured key.** Without one the tab reports unavailable
-  and the rest of the course still works.
 - **Answers take 20–60 seconds.** Two model calls run per question.
 - **Retrieval is keyword-based.** A question sharing no words with the material
   may return "Not enough in the material" even when the topic is covered.
@@ -287,14 +271,4 @@ These are current, deliberate, and not defects:
   redirect. Rephrase around the concept to get help.
 - **No chat history.** Questions and answers are not stored.
 - **No password reset**, and no email of any kind.
-- **Scanned PDFs cannot be used by the AI**, only downloaded.
-- **Uploaded PDFs are stored in the database**, which limits how much material
-  one deployment can hold. See the Developer Guide.
 
----
-
-## 7. Reporting a problem
-
-If something does not match this guide, that is a bug worth reporting. Please
-include the role you were signed in as, the course, what you did, what you
-expected from this guide, and what happened instead.
