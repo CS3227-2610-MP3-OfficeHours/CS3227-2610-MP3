@@ -85,7 +85,7 @@ Entities: `User`, `Course`, `Membership`, `Post`, `Comment`, `Material`,
 `PdfPage`, `KnowledgeMap`, `KnowledgeMapJob`. All are immutable records;
 mutation replaces the record.
 
-Migrations `V1`–`V5` in `db/migrations/` are applied in order at startup before
+Migrations `V1`–`V9` in `db/migrations/` are applied in order at startup before
 the server accepts traffic.
 
 **How files are stored, stated plainly.** Uploaded PDFs are held as `BYTEA` in
@@ -124,6 +124,8 @@ was not built, and this guide does not claim otherwise.
 | Active PDFs per course | 20 |
 | Student AI requests | 5 per minute per student per course |
 | Staff material retries | 3 per minute per staff member per course |
+| Staff Knowledge Map submissions | 3 per minute per staff member across courses |
+| Staff Knowledge Map new jobs | 20 per 10 minutes and 40 per hour per staff member across courses; the same limits per course across staff |
 | Question length | 1,000 characters |
 | Retrieval sent to the model | 8 pages, 3 materials, 24,000 characters |
 
@@ -190,6 +192,22 @@ reviewer and time. Changing or deleting the PDF drops the map.
 
 A map is never a forum post, never shown to a student, and never student-usable
 before a human approves it.
+
+Generation requests use server-owned rolling-window reservations. The single
+PDF and Generate-all endpoints count every authorized submission, reserve all
+new jobs atomically before Generate-all creates any job, and retain a
+reservation when the local queue or provider later fails. A limit response is
+`429 generation_rate_limited` with a safe message, `error.retryAt` ISO-8601
+timestamp, and rounded-up `Retry-After` seconds. Neither response identifies
+the limiting scope or remaining quota. The React `RateLimitNotice` formats that
+server time and disables generation controls only as feedback; every POST is
+still checked by the server.
+
+The rate-limit events are kept in the PostgreSQL durable snapshot and expire
+after one hour. The present snapshot adapter is a single-process deployment:
+multiple concurrent application processes would not make atomic reservations
+against each other. Keep deployment single-instance until the limiter is moved
+to transactional shared storage.
 
 ### Student: AI help (`StudentAnswerPolicy`, `StudentAiService`)
 

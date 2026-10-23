@@ -224,6 +224,15 @@ pages quickly.
 
 - **Generate all eligible maps** builds one for every text-ready PDF.
 - **Regenerate** creates a fresh map for a single PDF.
+- The **Active jobs** box shows this course's queued and generating map work and
+  updates automatically; completed and failed jobs leave the box without a
+  manual refresh.
+- Generation is limited by the server to 3 submissions per minute, 20 new jobs
+  per 10 minutes, and 40 new jobs per hour for each staff member. Each course
+  also has the same 20-per-10-minute and 40-per-hour new-job limits shared by
+  its staff. If a limit is reached, the page gives the server-provided local
+  time to try again and temporarily disables generation controls. Reloading or
+  changing browser state does not bypass the limit.
 - Each map arrives as **AI-generated — staff review required**. You then
   **Approve** or **Reject** it.
 - A map whose citations do not check out is marked **Unverified Knowledge
